@@ -1,0 +1,422 @@
+{
+  "name": "codex-session-tabs",
+  "displayName": "Codex Session Tabs",
+  "description": "%package.description%",
+  "version": "0.4.2",
+  "publisher": "kasiaalena",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kasiaalena/codex-session-tabs.git"
+  },
+  "homepage": "https://github.com/kasiaalena/codex-session-tabs#readme",
+  "bugs": {
+    "url": "https://github.com/kasiaalena/codex-session-tabs/issues"
+  },
+  "engines": {
+    "vscode": "^1.106.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "extensionKind": [
+    "ui"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onUri",
+    "onCommand:codexSessionTabs.nativePanel",
+    "onCommand:codexSessionTabs.nativeNewPanel",
+    "onCommand:codexSessionTabs.checkUpdate",
+    "onCommand:codexSessionTabs.restoreCodex",
+    "onCommand:codexSessionTabs.updateStatus",
+    "onCommand:codexSessionTabs.open",
+    "onCommand:codexSessionTabs.new",
+    "onCommand:codexSessionTabs.show",
+    "onCommand:codexSessionTabs.history",
+    "onCommand:codexSessionTabs.close",
+    "onCommand:codexSessionTabs.rename",
+    "onCommand:codexSessionTabs.refresh",
+    "onCommand:codexSessionTabs.scope"
+  ],
+  "extensionDependencies": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "codexSessionTabs.checkUpdate.en",
+        "title": "Check and update Codex",
+        "category": "Codex",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "codexSessionTabs.checkUpdate.ru",
+        "title": "Проверить и обновить Codex",
+        "category": "Codex",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "codexSessionTabs.restoreCodex.en",
+        "title": "Restore verified Codex",
+        "category": "Codex"
+      },
+      {
+        "command": "codexSessionTabs.restoreCodex.ru",
+        "title": "Восстановить проверенную версию Codex",
+        "category": "Codex"
+      },
+      {
+        "command": "codexSessionTabs.updateStatus.en",
+        "title": "Check tab status",
+        "category": "Codex"
+      },
+      {
+        "command": "codexSessionTabs.updateStatus.ru",
+        "title": "Проверить состояние вкладок",
+        "category": "Codex"
+      },
+      {
+        "command": "codexSessionTabs.open.en",
+        "title": "Open conversation in a tab",
+        "category": "Codex",
+        "icon": "$(search)"
+      },
+      {
+        "command": "codexSessionTabs.open.ru",
+        "title": "Открыть диалог во вкладке",
+        "category": "Codex",
+        "icon": "$(search)"
+      },
+      {
+        "command": "codexSessionTabs.new.en",
+        "title": "New tab",
+        "category": "Codex",
+        "icon": "$(add)"
+      },
+      {
+        "command": "codexSessionTabs.new.ru",
+        "title": "Новая вкладка",
+        "category": "Codex",
+        "icon": "$(add)"
+      },
+      {
+        "command": "codexSessionTabs.show.en",
+        "title": "Show sessions",
+        "category": "Codex"
+      },
+      {
+        "command": "codexSessionTabs.show.ru",
+        "title": "Показать сессии",
+        "category": "Codex"
+      },
+      {
+        "command": "codexSessionTabs.history.en",
+        "title": "Open from history",
+        "category": "Codex",
+        "icon": "$(history)"
+      },
+      {
+        "command": "codexSessionTabs.history.ru",
+        "title": "Открыть из истории",
+        "category": "Codex",
+        "icon": "$(history)"
+      },
+      {
+        "command": "codexSessionTabs.close.en",
+        "title": "Close tab",
+        "category": "Codex",
+        "icon": "$(close)"
+      },
+      {
+        "command": "codexSessionTabs.close.ru",
+        "title": "Закрыть вкладку",
+        "category": "Codex",
+        "icon": "$(close)"
+      },
+      {
+        "command": "codexSessionTabs.rename.en",
+        "title": "Rename session",
+        "category": "Codex",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "codexSessionTabs.rename.ru",
+        "title": "Переименовать сессию",
+        "category": "Codex",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "codexSessionTabs.refresh.en",
+        "title": "Refresh sessions",
+        "category": "Codex",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "codexSessionTabs.refresh.ru",
+        "title": "Обновить сессии",
+        "category": "Codex",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "codexSessionTabs.scope.en",
+        "title": "Choose session scope",
+        "category": "Codex",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "codexSessionTabs.scope.ru",
+        "title": "Выбрать папку сессий",
+        "category": "Codex",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "codexSessionTabs.language",
+        "title": "Language / Язык",
+        "category": "Codex",
+        "icon": "$(globe)"
+      }
+    ],
+    "viewsContainers": {
+      "secondarySidebar": [
+        {
+          "id": "codex-session-tabs",
+          "title": "Codex",
+          "icon": "resources/sessions.svg"
+        }
+      ]
+    },
+    "views": {
+      "codex-session-tabs": [
+        {
+          "id": "codexSessionTabs.sessions",
+          "name": "%view.open%"
+        },
+        {
+          "id": "codexSessionTabs.history",
+          "name": "%view.history%",
+          "visibility": "visible"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "codexSessionTabs.sessions",
+        "contents": "No Codex tabs are open.\n[New chat](command:codexSessionTabs.new)\n[Open from history](command:codexSessionTabs.history)",
+        "when": "codexSessionTabs.uiLanguage == en"
+      },
+      {
+        "view": "codexSessionTabs.sessions",
+        "contents": "Нет открытых вкладок Codex.\n[Создать диалог](command:codexSessionTabs.new)\n[Открыть из истории](command:codexSessionTabs.history)",
+        "when": "codexSessionTabs.uiLanguage == ru"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "codexSessionTabs.checkUpdate.en",
+          "when": "view == codexSessionTabs.sessions && codexSessionTabs.uiLanguage == en",
+          "group": "navigation@3"
+        },
+        {
+          "command": "codexSessionTabs.checkUpdate.ru",
+          "when": "view == codexSessionTabs.sessions && codexSessionTabs.uiLanguage == ru",
+          "group": "navigation@3"
+        },
+        {
+          "command": "codexSessionTabs.new.en",
+          "when": "view == codexSessionTabs.sessions && codexSessionTabs.uiLanguage == en",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codexSessionTabs.new.ru",
+          "when": "view == codexSessionTabs.sessions && codexSessionTabs.uiLanguage == ru",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codexSessionTabs.history.en",
+          "when": "view == codexSessionTabs.sessions && codexSessionTabs.uiLanguage == en",
+          "group": "navigation@2"
+        },
+        {
+          "command": "codexSessionTabs.history.ru",
+          "when": "view == codexSessionTabs.sessions && codexSessionTabs.uiLanguage == ru",
+          "group": "navigation@2"
+        },
+        {
+          "command": "codexSessionTabs.scope.en",
+          "when": "view == codexSessionTabs.history && codexSessionTabs.uiLanguage == en",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codexSessionTabs.scope.ru",
+          "when": "view == codexSessionTabs.history && codexSessionTabs.uiLanguage == ru",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codexSessionTabs.refresh.en",
+          "when": "view == codexSessionTabs.history && codexSessionTabs.uiLanguage == en",
+          "group": "navigation@2"
+        },
+        {
+          "command": "codexSessionTabs.refresh.ru",
+          "when": "view == codexSessionTabs.history && codexSessionTabs.uiLanguage == ru",
+          "group": "navigation@2"
+        },
+        {
+          "command": "codexSessionTabs.language",
+          "when": "view == codexSessionTabs.sessions",
+          "group": "navigation@4"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "codexSessionTabs.close.en",
+          "when": "view == codexSessionTabs.sessions && viewItem == openCodexSession && codexSessionTabs.uiLanguage == en",
+          "group": "inline"
+        },
+        {
+          "command": "codexSessionTabs.close.ru",
+          "when": "view == codexSessionTabs.sessions && viewItem == openCodexSession && codexSessionTabs.uiLanguage == ru",
+          "group": "inline"
+        },
+        {
+          "command": "codexSessionTabs.rename.en",
+          "when": "view == codexSessionTabs.sessions && viewItem == openCodexSession && codexSessionTabs.uiLanguage == en",
+          "group": "1_session"
+        },
+        {
+          "command": "codexSessionTabs.rename.ru",
+          "when": "view == codexSessionTabs.sessions && viewItem == openCodexSession && codexSessionTabs.uiLanguage == ru",
+          "group": "1_session"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "codexSessionTabs.rename.en",
+          "when": "resourceScheme == openai-codex && codexSessionTabs.uiLanguage == en",
+          "group": "1_session"
+        },
+        {
+          "command": "codexSessionTabs.rename.ru",
+          "when": "resourceScheme == openai-codex && codexSessionTabs.uiLanguage == ru",
+          "group": "1_session"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "codexSessionTabs.checkUpdate.en",
+          "when": "codexSessionTabs.uiLanguage == en"
+        },
+        {
+          "command": "codexSessionTabs.checkUpdate.ru",
+          "when": "codexSessionTabs.uiLanguage == ru"
+        },
+        {
+          "command": "codexSessionTabs.restoreCodex.en",
+          "when": "codexSessionTabs.uiLanguage == en"
+        },
+        {
+          "command": "codexSessionTabs.restoreCodex.ru",
+          "when": "codexSessionTabs.uiLanguage == ru"
+        },
+        {
+          "command": "codexSessionTabs.updateStatus.en",
+          "when": "codexSessionTabs.uiLanguage == en"
+        },
+        {
+          "command": "codexSessionTabs.updateStatus.ru",
+          "when": "codexSessionTabs.uiLanguage == ru"
+        },
+        {
+          "command": "codexSessionTabs.open.en",
+          "when": "codexSessionTabs.uiLanguage == en"
+        },
+        {
+          "command": "codexSessionTabs.open.ru",
+          "when": "codexSessionTabs.uiLanguage == ru"
+        },
+        {
+          "command": "codexSessionTabs.new.en",
+          "when": "codexSessionTabs.uiLanguage == en"
+        },
+        {
+          "command": "codexSessionTabs.new.ru",
+          "when": "codexSessionTabs.uiLanguage == ru"
+        },
+        {
+          "command": "codexSessionTabs.show.en",
+          "when": "codexSessionTabs.uiLanguage == en"
+        },
+        {
+          "command": "codexSessionTabs.show.ru",
+          "when": "codexSessionTabs.uiLanguage == ru"
+        },
+        {
+          "command": "codexSessionTabs.history.en",
+          "when": "codexSessionTabs.uiLanguage == en"
+        },
+        {
+          "command": "codexSessionTabs.history.ru",
+          "when": "codexSessionTabs.uiLanguage == ru"
+        },
+        {
+          "command": "codexSessionTabs.close.en",
+          "when": "codexSessionTabs.uiLanguage == en"
+        },
+        {
+          "command": "codexSessionTabs.close.ru",
+          "when": "codexSessionTabs.uiLanguage == ru"
+        },
+        {
+          "command": "codexSessionTabs.rename.en",
+          "when": "codexSessionTabs.uiLanguage == en"
+        },
+        {
+          "command": "codexSessionTabs.rename.ru",
+          "when": "codexSessionTabs.uiLanguage == ru"
+        },
+        {
+          "command": "codexSessionTabs.refresh.en",
+          "when": "codexSessionTabs.uiLanguage == en"
+        },
+        {
+          "command": "codexSessionTabs.refresh.ru",
+          "when": "codexSessionTabs.uiLanguage == ru"
+        },
+        {
+          "command": "codexSessionTabs.scope.en",
+          "when": "codexSessionTabs.uiLanguage == en"
+        },
+        {
+          "command": "codexSessionTabs.scope.ru",
+          "when": "codexSessionTabs.uiLanguage == ru"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Codex Session Tabs",
+      "properties": {
+        "codexSessionTabs.language": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "en",
+            "ru"
+          ],
+          "default": "auto",
+          "scope": "application",
+          "description": "%setting.language%",
+          "enumDescriptions": [
+            "%setting.auto%",
+            "%setting.english%",
+            "%setting.russian%"
+          ]
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "package": "python3 scripts/package.py"
+  }
+}

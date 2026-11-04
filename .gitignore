@@ -1,0 +1,28 @@
+# Generated installers are attached to GitHub releases instead.
+dist/
+*.vsix
+
+# Local verification output can contain real conversation titles and paths.
+_tmp/
+validation.json
+report.json
+tab-icons.json
+tab-icons.png
+coverage/
+*.log
+
+# Local credentials, conversations, databases, and editor state.
+.env
+.env.*
+.codex/
+.vscode/
+*.sqlite
+*.sqlite-*
+*.vscdb
+*.vscdb.*
+*.jsonl
+
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store

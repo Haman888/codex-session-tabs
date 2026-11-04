@@ -1,0 +1,9 @@
+{
+  "package.description": "Independent Codex tabs, open sessions and conversation history.",
+  "view.open": "Open sessions",
+  "view.history": "History",
+  "setting.language": "Language of this companion extension. The Codex chat interface keeps its own language.",
+  "setting.auto": "Use the VS Code display language; unsupported languages use English.",
+  "setting.english": "English",
+  "setting.russian": "Русский"
+}

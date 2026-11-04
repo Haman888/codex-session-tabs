@@ -1,0 +1,206 @@
+'use strict';
+
+const { t, errorText, draftNumber } = require('./i18n');
+
+const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
+function cleanTitle(value) { return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 120); }
+
+function compactTitle(value) {
+  const title = cleanTitle(value);
+  if (title.length <= 36 && title.split(' ').length <= 5) return title;
+  const words = title.split(' ');
+  let result = '';
+  for (const word of words.slice(0, 5)) {
+    const next = result ? `${result} ${word}` : word;
+    if (next.length > 35) break;
+    result = next;
+  }
+  return `${result || title.slice(0, 35)}…`;
+}
+
+class Titles {
+  constructor(context, loadSessions, changed, output, options = {}) {
+    this.context = context;
+    this.loadSessions = loadSessions;
+    this.changed = changed;
+    this.output = output;
+    this.bindings = new Map();
+    this.identities = new Map(Object.entries(context.globalState.get('tabIdentities', {})));
+    this.custom = new Map(Object.entries(context.globalState.get('customTitles', {})));
+    this.drafts = new Map(Object.entries(context.globalState.get('draftTitles', {})));
+    this.metadata = new Map();
+    // Number drafts within this window activation, never across restarts.
+    this.counter = 0;
+    this.options = options;
+    this.unread = new Set(context.globalState.get('unreadSessions', []));
+    this.turns = new Map();
+    this.persistence = Promise.resolve();
+    this.localizeDrafts();
+  }
+  idFor(key) { return this.bindings.get(key)?.id || this.identities.get(key); }
+  titleFor(id, fallback) { return this.custom.get(id) || compactTitle(this.metadata.get(id)?.title || fallback); }
+  draftFor(key) {
+    let draft = this.drafts.get(key);
+    if (draft?.custom) return draft.title;
+    const occupied = new Set();
+    // VS Code already knows the restored tabs even when their hidden native
+    // editors have not attached. Closed resources in draftTitles reserve nothing.
+    for (const row of [...this.bindings.values(), ...(this.options.openTabs?.() || [])]) {
+      if (row.key === key) continue;
+      for (const title of [row.title, row.getTitle?.(), row.lastTitle, row.placeholder, this.drafts.get(row.key)?.title]) {
+        if (title) occupied.add(title);
+      }
+    }
+    if (!draft || occupied.has(draft.title)) {
+      let title;
+      const occupiedNumbers = new Set([...occupied].map(draftNumber).filter(Number.isSafeInteger));
+      do { title = t('draft.numbered', { number: ++this.counter }); }
+      while (occupied.has(title) || occupiedNumbers.has(this.counter));
+      draft = { title, custom: false };
+      this.drafts.set(key, draft);
+      this.persist();
+    }
+    return draft.title;
+  }
+  localizeDrafts() {
+    let changed = false;
+    for (const draft of this.drafts.values()) {
+      const number = !draft.custom && draftNumber(draft.title);
+      if (!number) continue;
+      const title = t('draft.numbered', { number });
+      if (draft.title !== title) { draft.title = title; changed = true; }
+    }
+    const activeKeys = new Set([...this.bindings.keys(), ...(this.options.openTabs?.() || []).map(row => row.key)]);
+    for (const key of activeKeys) {
+      if (this.drafts.has(key) && !this.drafts.get(key).custom) this.draftFor(key);
+    }
+    if (changed) this.persist();
+    this.applyUI();
+    return this.persistence;
+  }
+  persist() {
+    this.persistence = this.persistence.then(async () => {
+      // Preserve recently closed resources too, for VS Code's Reopen Closed Tab.
+      while (this.identities.size > 500) this.identities.delete(this.identities.keys().next().value);
+      while (this.drafts.size > 500) this.drafts.delete(this.drafts.keys().next().value);
+      await this.context.globalState.update('tabIdentities', Object.fromEntries(this.identities));
+      await this.context.globalState.update('customTitles', Object.fromEntries(this.custom));
+      await this.context.globalState.update('draftTitles', Object.fromEntries(this.drafts));
+      await this.context.globalState.update('unreadSessions', [...this.unread]);
+    }).catch(error => this.output.appendLine(t('log.saveTitles', { message: errorText(error) })));
+    return this.persistence;
+  }
+  async attach(binding) {
+    if (this.options.iconsReady) await this.options.iconsReady;
+    const id = UUID.test(binding.id || '') ? binding.id : this.identities.get(binding.key);
+    this.bindings.set(binding.key, { ...binding, id });
+    if (id) this.identities.set(binding.key, id);
+    else this.draftFor(binding.key);
+    await this.sync();
+    return { id };
+  }
+  isUnread(id) { return this.unread.has(id); }
+  activity({ id, phase, turnId }) {
+    if (!UUID.test(id || '')) return;
+    const previous = this.turns.get(id);
+    const retired = previous?.retired || [];
+    if (turnId && retired.includes(turnId)) return;
+    const nextState = () => {
+      // An ID-less duplicate must not erase the known active turn identity.
+      const current = turnId || (previous?.phase === 'started' ? previous.turnId : undefined);
+      const older = previous?.turnId && current && previous.turnId !== current
+        ? [...retired, previous.turnId].slice(-32) : retired;
+      return { phase, turnId: current, retired: older };
+    };
+    if (phase === 'started') {
+      if (turnId && previous?.phase === 'completed' && previous.turnId === turnId) return;
+      this.turns.set(id, nextState());
+      return;
+    }
+    if (phase !== 'completed') return;
+    if (previous?.phase === 'started' && previous.turnId && turnId && previous.turnId !== turnId) return;
+    if (previous?.phase === 'completed' && (!turnId || previous.turnId === turnId)) return;
+    this.turns.set(id, nextState());
+    if (this.options.isActive?.(id)) this.unread.delete(id);
+    else this.unread.add(id);
+    this.persist();
+    this.applyUI();
+    this.changed();
+  }
+  acknowledge(id) {
+    if (!this.unread.delete(id)) return;
+    this.persist();
+    this.applyUI();
+    this.changed();
+  }
+  detach(key) { this.bindings.delete(key); this.changed(); }
+  async bind(key, id) {
+    if (!UUID.test(id || '')) throw new Error(t('error.invalidId'));
+    const binding = this.bindings.get(key);
+    if (!binding) return;
+    binding.id = id;
+    this.identities.set(key, id);
+    const draft = this.drafts.get(key);
+    binding.placeholder = draft?.title || binding.lastTitle || t('draft.fallback');
+    if (draft?.custom) {
+      this.custom.set(id, draft.title);
+      try { await binding.rename(id, draft.title); }
+      catch (error) { this.output.appendLine(t('log.renameLocal', { message: errorText(error) })); }
+    }
+    this.drafts.delete(key);
+    await this.persist();
+    await this.sync();
+  }
+  async rename(row, name) {
+    name = cleanTitle(name);
+    if (!name) throw new Error(t('error.nameEmpty'));
+    const binding = this.bindings.get(row.key);
+    const id = row.id || binding?.id || this.identities.get(row.key);
+    if (!binding) throw new Error(t('error.adapterInactive'));
+    if (id) {
+      // Use Codex's own API: never edit its SQLite database directly.
+      await binding.rename(id, name);
+      this.custom.set(id, name);
+    } else this.drafts.set(row.key, { title: name, custom: true });
+    await this.persist();
+    await this.sync();
+    return name;
+  }
+  async sync() {
+    if (this.syncing) return this.syncing;
+    this.syncing = this.performSync();
+    try { await this.syncing; }
+    finally { this.syncing = undefined; }
+  }
+  async performSync() {
+    try {
+      this.metadata = new Map((await this.loadSessions()).map(row => [row.id, row]));
+      this.lastSyncError = undefined;
+    } catch (error) {
+      if (this.lastSyncError !== error.message) this.output.appendLine(t('log.titleRefresh', { message: errorText(error) }));
+      this.lastSyncError = error.message;
+    }
+    this.applyUI();
+  }
+  applyUI() {
+    let changed = false;
+    for (const binding of this.bindings.values()) {
+      const unread = this.unread.has(binding.id);
+      if (binding.setUnread && binding.lastUnread !== unread && (!unread || this.options.icons)) {
+        binding.lastUnread = unread;
+        binding.setUnread(unread, this.options.icons);
+        changed = true;
+      }
+      const fallback = this.drafts.get(binding.key)?.title || binding.placeholder || t('draft.fallback');
+      const title = cleanTitle(binding.id ? this.titleFor(binding.id, fallback) : fallback);
+      if (!title || (binding.getTitle ? binding.getTitle() === title : binding.lastTitle === title)) continue;
+      binding.lastTitle = title;
+      try { binding.setTitle(title); changed = true; }
+      catch (error) { this.output.appendLine(t('log.tabClosed', { message: errorText(error) })); }
+    }
+    if (changed) this.changed();
+  }
+}
+
+module.exports = { Titles, cleanTitle, compactTitle };
