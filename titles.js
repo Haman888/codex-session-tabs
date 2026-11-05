@@ -19,6 +19,42 @@ function compactTitle(value) {
   return `${result || title.slice(0, 35)}…`;
 }
 
+function sameIcon(actual, expected) {
+  if (actual === expected) return true;
+  return Boolean(actual?.light && actual?.dark && expected?.light && expected?.dark
+    && actual.light.toString() === expected.light.toString()
+    && actual.dark.toString() === expected.dark.toString());
+}
+
+// A transient active tab during restoration is not proof that its reply was read.
+// The caller supplies only fully mounted, visible tabs in the focused window.
+function createReadTracker(current, acknowledge, { delay = 1000, schedule = setTimeout, cancel = clearTimeout } = {}) {
+  let pending;
+  let disposed = false;
+  const same = (a, b) => a.id === b.id && a.key === b.key && a.binding === b.binding && a.turn === b.turn;
+  const stop = () => {
+    if (pending) cancel(pending.timer);
+    pending = undefined;
+  };
+  const update = () => {
+    if (disposed) return;
+    const candidate = current();
+    if (!candidate?.id) { stop(); return; }
+    if (pending && same(pending.candidate, candidate)) return;
+    stop();
+    const waiting = { candidate };
+    pending = waiting;
+    waiting.timer = schedule(() => {
+      if (pending !== waiting || disposed) return;
+      pending = undefined;
+      const latest = current();
+      if (latest && same(candidate, latest)) acknowledge(latest.id);
+      else update();
+    }, delay);
+  };
+  return { update, dispose() { disposed = true; stop(); } };
+}
+
 class Titles {
   constructor(context, loadSessions, changed, output, options = {}) {
     this.context = context;
@@ -101,6 +137,7 @@ class Titles {
     return { id };
   }
   isUnread(id) { return this.unread.has(id); }
+  isRunning(id) { return this.turns.get(id)?.phase === 'started'; }
   activity({ id, phase, turnId }) {
     if (!UUID.test(id || '')) return;
     const previous = this.turns.get(id);
@@ -116,6 +153,7 @@ class Titles {
     if (phase === 'started') {
       if (turnId && previous?.phase === 'completed' && previous.turnId === turnId) return;
       this.turns.set(id, nextState());
+      this.changed();
       return;
     }
     if (phase !== 'completed') return;
@@ -187,7 +225,8 @@ class Titles {
     let changed = false;
     for (const binding of this.bindings.values()) {
       const unread = this.unread.has(binding.id);
-      if (binding.setUnread && binding.lastUnread !== unread && (!unread || this.options.icons)) {
+      const repaint = unread && binding.getIcon && !sameIcon(binding.getIcon(), this.options.icons);
+      if (binding.setUnread && (binding.lastUnread !== unread || repaint) && (!unread || this.options.icons)) {
         binding.lastUnread = unread;
         binding.setUnread(unread, this.options.icons);
         changed = true;
@@ -203,4 +242,4 @@ class Titles {
   }
 }
 
-module.exports = { Titles, cleanTitle, compactTitle };
+module.exports = { Titles, cleanTitle, compactTitle, createReadTracker };

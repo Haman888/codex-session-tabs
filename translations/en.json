@@ -17,6 +17,7 @@
   "history.title": "Codex history",
   "history.search": "Find a closed conversation by name or folder",
   "session.completed": "Done – a new reply is available",
+  "session.working": "Working…",
   "session.updated": "Updated: {date}",
   "rename.choose": "Choose a session to rename",
   "rename.title": "Codex session name",

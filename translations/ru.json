@@ -17,6 +17,7 @@
   "history.title": "История Codex",
   "history.search": "Найти закрытый диалог по названию или папке",
   "session.completed": "Готово – есть новый ответ",
+  "session.working": "Работает…",
   "session.updated": "Изменён: {date}",
   "rename.choose": "Какую сессию переименовать?",
   "rename.title": "Название сессии Codex",

@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { codexHome, listSessions, getSessionStatus, resetSessions } = require('./sessions');
-const { Titles } = require('./titles');
+const { Titles, createReadTracker } = require('./titles');
 const { prepareBadges } = require('./badges');
 const { activateUpdates } = require('./update-ui');
 
@@ -16,6 +16,7 @@ const VIEW = 'codexSessionTabs.sessions';
 const EDITOR = 'chatgpt.conversationEditor';
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 let titles;
+let readTracker;
 let panelOpening = Promise.resolve();
 
 async function ensureCodex() {
@@ -88,6 +89,14 @@ function openTabs() {
   return rows;
 }
 
+function readableActiveTab() {
+  if (!vscode.window.state.focused) return undefined;
+  const active = openTabs().find(row => row.tab === vscode.window.tabGroups.activeTabGroup.activeTab);
+  const binding = active && titles?.bindings.get(active.key);
+  if (!binding || binding.id !== active.id || binding.isReady?.() !== true || binding.isVisible?.() !== true) return undefined;
+  return { ...active, binding };
+}
+
 async function revealTab(row) {
   const existing = openTabs().find(item => item.key === row.key);
   if (!existing) return row.id ? openSession(row.id) : undefined;
@@ -147,10 +156,12 @@ class SessionsProvider {
     item.id = session.key || session.id;
     item.contextValue = this.kind === 'open' ? 'openCodexSession' : 'closedCodexSession';
     const unread = titles?.isUnread(session.id);
-    item.iconPath = unread ? new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('charts.orange'))
+    const running = titles?.isRunning(session.id);
+    item.iconPath = running ? new vscode.ThemeIcon('loading~spin')
+      : unread ? new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('charts.orange'))
       : new vscode.ThemeIcon(this.kind === 'history' ? 'history' : 'comment-discussion');
     item.description = path.basename(session.cwd || '') || undefined;
-    item.tooltip = [title, unread && t('session.completed'), session.cwd, session.updatedAt && t('session.updated', { date: formatDate(session.updatedAt) })].filter(Boolean).join('\n');
+    item.tooltip = [title, running ? t('session.working') : unread && t('session.completed'), session.cwd, session.updatedAt && t('session.updated', { date: formatDate(session.updatedAt) })].filter(Boolean).join('\n');
     item.command = { command: 'codexSessionTabs.open', title: t('command.open'), arguments: [session] };
     return item;
   }
@@ -173,21 +184,21 @@ function activate(context) {
   };
   provider.updateDescription();
   history.updateDescription();
-  const render = () => { provider.refresh(); history.refresh(); provider.updateDescription(); };
+  const render = () => { provider.refresh(); history.refresh(); provider.updateDescription(); readTracker?.update(); };
   const titleOptions = {
     openTabs,
-    isActive: id => vscode.window.state.focused && openTabs().some(row => row.id === id && row.tab === vscode.window.tabGroups.activeTabGroup.activeTab),
+    isActive: id => readableActiveTab()?.id === id,
   };
   titleOptions.iconsReady = prepareBadges(context).then(icons => { titleOptions.icons = icons; }, error => output.appendLine(t('log.iconsFailed', { message: errorText(error) })));
   titles = new Titles(context, () => listSessions(), render, output, titleOptions);
   const updates = activateUpdates(context, output, () => [...titles.turns.values()].some(turn => turn.phase === 'started'));
-  const acknowledgeActive = () => {
-    if (!vscode.window.state.focused) return;
-    const active = openTabs().find(row => row.tab === vscode.window.tabGroups.activeTabGroup.activeTab);
-    if (active?.id) titles.acknowledge(active.id);
-  };
+  readTracker = createReadTracker(() => {
+    const active = readableActiveTab();
+    if (!active?.id || !titles.isUnread(active.id)) return undefined;
+    return { id: active.id, key: active.key, binding: active.binding, turn: titles.turns.get(active.id) };
+  }, id => titles.acknowledge(id), { schedule: setTimeout, cancel: clearTimeout });
   const refresh = () => {
-    acknowledgeActive();
+    readTracker.update();
     render();
     titles.sync().catch(error => output.appendLine(error.message));
   };
@@ -213,7 +224,7 @@ function activate(context) {
     })), { title: t('history.title'), placeHolder: t('history.search'), matchOnDescription: true });
     if (selected) return openSession(selected.session);
   };
-  context.subscriptions.push(output, provider, history, tree, historyTree,
+  context.subscriptions.push(output, provider, history, tree, historyTree, readTracker,
     vscode.commands.registerCommand('codexSessionTabs.open', safe(async session => {
       if (session?.key) return revealTab(session);
       if (session) return openSession(session);
@@ -276,7 +287,7 @@ function activate(context) {
     vscode.workspace.onDidChangeWorkspaceFolders(refresh),
     vscode.window.tabGroups.onDidChangeTabs(refresh),
     vscode.window.tabGroups.onDidChangeTabGroups(refresh),
-    vscode.window.onDidChangeWindowState(acknowledgeActive),
+    vscode.window.onDidChangeWindowState(() => readTracker.update()),
     tree.onDidChangeVisibility(() => { if (tree.visible) refresh(); }),
     historyTree.onDidChangeVisibility(() => { if (historyTree.visible) history.refresh(); }),
   );
@@ -311,4 +322,9 @@ function activate(context) {
   return { listSessions: () => provider.list(), openSession, newSession, show, view: tree, provider, history, historyView: historyTree, titles, updates, language };
 }
 
-module.exports = { activate };
+function deactivate() {
+  readTracker?.dispose();
+  return titles?.persistence;
+}
+
+module.exports = { activate, deactivate };

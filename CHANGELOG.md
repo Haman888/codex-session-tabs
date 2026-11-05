@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.4.2 – Unreleased
+## 0.4.3 — Preview
+
+- Show a spinning indicator in the open-sessions sidebar while a reply is running, followed by the existing orange completion dot for background replies.
+- Preserve unread indicators while tabs are restored or still loading; clear them after about one second in a ready, visible tab in the focused window.
+- Reapply the unread editor icon when the native editor replaces it, without repeatedly redrawing equivalent icon URIs.
+- Persist pending unread state on orderly deactivation and cancel the reading timer.
+
+## 0.4.2 — Preview
 
 - Developer integration tests require a private temporary VS Code test profile and verify its actual storage before writing reports or changing editors. Reports and optional screenshots share a private per-run output directory with safe atomic writes.
 - Malformed, null and primitive name-index records do not interrupt valid history reads.
@@ -59,6 +66,6 @@
 - Persisted conversation bindings across window reloads.
 - Correct renderer URLs for tab badge icons.
 
-Tested on macOS arm64 with VS Code 1.144.0 and the official Codex extension
+Tested on macOS arm64 with VS Code 1.145.0 and the official Codex extension
 26.1021.22027. Automatic titles and completion indicators require the included
 version-specific, reversible adapter.
