@@ -39,7 +39,7 @@ async function fixture(t, content = source) {
     await fs.copyFile(path.join(root, name), target);
   }
   await fs.writeFile(path.join(helper, 'compatibility.json'), JSON.stringify([{
-    version: '26.1021.22027', platform: 'darwin-arm64',
+    version: '26.1021.22027', platform: `${process.platform}-${process.arch}`,
     legacyBridgeSha256s: [digest(Buffer.from('// old revision'))],
     renderer: { path: rendererPath, originalSha256: digest(Buffer.from(rendererOriginal)), patchedSha256: digest(Buffer.from(rendererPatched)) },
   }]));

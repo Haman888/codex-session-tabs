@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.4 — fork (Haman888/codex-session-tabs)
+
+- Intel Mac support: a compatibility profile for official Codex **26.1007.21434** (`darwin-x64`). The native hooks find the minified names of that build; it needs no renderer change, because 26.1007 does not start thousands of script preloads.
+- Profiles are chosen for the processor of the Mac (`darwin-arm64` or `darwin-x64`) in the Python adapter and in the update UI, so setup and recovery are no longer limited to Apple silicon. The manual adapter prefers the profile whose reviewed files are on disk, so `--check` and `--restore` also work when Python runs under Rosetta; `--platform` overrides the choice.
+- A profile may raise the 30-second renderer startup watchdog of Codex (`startupTimeoutMs`, 30–300 s). The Intel profile uses 90 s, so a slow Mac shows the chat later instead of “Codex could not start”. New tabs and the isolated update check wait accordingly.
+- No “Set up protection” reminder on every window start. **Codex: Check and update Codex** asks for confirmation, naming the download size and the test window, before it does anything.
+- The notice that the latest Codex is not verified no longer holds the check until it is closed.
+- Closing a new tab that is still loading no longer shows an error.
+- Renaming from a tab's context menu no longer saves “[object Object]” as the conversation name in Codex. VS Code passes the editor context as a second argument; only text is now taken as a name.
+- The rename box starts from the full conversation name instead of the shortened tab label. The History picker and the sidebar tooltips show full names too, so search finds words after the fifth.
+- “Close tab” from the Command Palette closes the active Codex tab instead of doing nothing.
+- Less background work: a background window no longer re-reads history every 2.5 s; Codex database changes and regaining focus refresh it. History stays cached for 30 s and is reloaded after a database change, at most once every 5 s. The threads columns are read once per database, so a reload runs sqlite3 once. The adapter health check runs every 60 s instead of every 15 s.
+- A restored conversation that history does not list is labelled “Codex conversation”, not “New chat”.
+- History messages: an older list shown during an outage is no longer reported as “Could not read history”, and the text no longer claims that automatic retries are paused.
+- `scripts/package.py` builds for the processor of the Mac by default, refuses unknown targets and puts the target into the file name.
+- The Marketplace response is decoded whatever the letter case of `Content-Encoding: gzip`.
+
 ## 0.4.3 — Preview
 
 - Show a spinning indicator in the open-sessions sidebar while a reply is running, followed by the existing orange completion dot for background replies.

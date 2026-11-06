@@ -76,6 +76,7 @@ class Titles {
   }
   idFor(key) { return this.bindings.get(key)?.id || this.identities.get(key); }
   titleFor(id, fallback) { return this.custom.get(id) || compactTitle(this.metadata.get(id)?.title || fallback); }
+  fullTitleFor(id, fallback) { return this.custom.get(id) || cleanTitle(this.metadata.get(id)?.title || fallback); }
   draftFor(key) {
     let draft = this.drafts.get(key);
     if (draft?.custom) return draft.title;
@@ -191,7 +192,7 @@ class Titles {
     await this.sync();
   }
   async rename(row, name) {
-    name = cleanTitle(name);
+    name = cleanTitle(typeof name === 'string' ? name : '');
     if (!name) throw new Error(t('error.nameEmpty'));
     const binding = this.bindings.get(row.key);
     const id = row.id || binding?.id || this.identities.get(row.key);
@@ -231,7 +232,7 @@ class Titles {
         binding.setUnread(unread, this.options.icons);
         changed = true;
       }
-      const fallback = this.drafts.get(binding.key)?.title || binding.placeholder || t('draft.fallback');
+      const fallback = this.drafts.get(binding.key)?.title || binding.placeholder || t(binding.id ? 'chat.fallback' : 'draft.fallback');
       const title = cleanTitle(binding.id ? this.titleFor(binding.id, fallback) : fallback);
       if (!title || (binding.getTitle ? binding.getTitle() === title : binding.lastTitle === title)) continue;
       binding.lastTitle = title;

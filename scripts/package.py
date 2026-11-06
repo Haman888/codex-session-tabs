@@ -1,10 +1,16 @@
 """Build a local VSIX with the Python standard library, without npm downloads."""
 from pathlib import Path
 import json
+import platform
+import sys
 import zipfile
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent.parent
+HOST = "darwin-arm64" if platform.machine().lower() in ("arm64", "aarch64") else "darwin-x64"
+TARGET = sys.argv[1] if len(sys.argv) > 1 else HOST
+if TARGET not in ("darwin-arm64", "darwin-x64"):
+    raise SystemExit(f"Unknown target {TARGET}; use darwin-arm64 or darwin-x64.")
 package = json.loads((ROOT / "package.json").read_text())
 translations = json.loads((ROOT / "package.nls.json").read_text())
 description = package["description"]
@@ -23,7 +29,7 @@ def element(parent, tag, text=None, **attributes):
 
 manifest = ET.Element(f"{{{namespace}}}PackageManifest", {"Version": "2.0.0"})
 metadata = element(manifest, "Metadata")
-element(metadata, "Identity", Id=package["name"], Version=package["version"], Publisher=package["publisher"], Language="en-US", TargetPlatform="darwin-arm64")
+element(metadata, "Identity", Id=package["name"], Version=package["version"], Publisher=package["publisher"], Language="en-US", TargetPlatform=TARGET)
 element(metadata, "DisplayName", package["displayName"])
 element(metadata, "Description", description)
 element(metadata, "Categories", "Other")
@@ -53,7 +59,7 @@ ET.SubElement(types, "Override", PartName="/extension/LICENSE", ContentType="tex
 
 dist = ROOT / "dist"
 dist.mkdir(exist_ok=True)
-output = dist / f"{package['name']}-{package['version']}.vsix"
+output = dist / f"{package['name']}-{package['version']}-{TARGET}.vsix"
 files = ["package.json", "package.nls.json", "package.nls.ru.json", "i18n.js", "ui-language.js", "translations/en.json", "translations/ru.json", "extension.js", "sessions.js", "titles.js", "badges.js", "native-bridge.cjs", "update-core.js", "update-ui.js", "compatibility.json", "README.md", "README.ru.md", "LICENSE", "resources/sessions.svg", "scripts/native_adapter.py", "scripts/renderer_adapter.py", "scripts/update_package.py", "scripts/read_history.py", "test/update-probe.js"]
 with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
     archive.writestr("extension.vsixmanifest", ET.tostring(manifest, encoding="utf-8", xml_declaration=True))

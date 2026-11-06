@@ -23,7 +23,7 @@ async function fixture(t) {
     const file = path.join(helper, name); await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, 'fixture');
   }
-  const profile = { version: '1.0.0', platform: 'darwin-arm64', vsixSha256: sha('official bytes') };
+  const profile = { version: '1.0.0', platform: `${process.platform}-${process.arch}`, vsixSha256: sha('official bytes') };
   const installs = [];
   let busy = false, consent = true;
   const manager = new UpdateManager({ storage: path.join(root, 'storage'), helper, profiles: [profile],

@@ -1,17 +1,17 @@
 {
   "name": "codex-session-tabs",
-  "displayName": "Codex Session Tabs",
+  "displayName": "Codex Session Tabs (fork)",
   "description": "%package.description%",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "publisher": "kasiaalena",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kasiaalena/codex-session-tabs.git"
+    "url": "https://github.com/Haman888/codex-session-tabs.git"
   },
-  "homepage": "https://github.com/kasiaalena/codex-session-tabs#readme",
+  "homepage": "https://github.com/Haman888/codex-session-tabs#readme",
   "bugs": {
-    "url": "https://github.com/kasiaalena/codex-session-tabs/issues"
+    "url": "https://github.com/Haman888/codex-session-tabs/issues"
   },
   "engines": {
     "vscode": "^1.106.0"

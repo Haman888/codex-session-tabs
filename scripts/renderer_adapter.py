@@ -3,8 +3,10 @@ from pathlib import Path, PurePosixPath
 import hashlib
 import json
 import os
+import platform
 import re
 import stat
+import sys
 import uuid
 
 
@@ -50,12 +52,30 @@ def read_optional(file):
         return None
 
 
-def profile_for(helper, version):
+def host_platform():
+    machine = platform.machine().lower()
+    arch = {'aarch64': 'arm64', 'x86_64': 'x64', 'amd64': 'x64'}.get(machine, machine)
+    return f'{sys.platform}-{arch}'
+
+
+def profile_for(helper, version, target=None, contents=()):
+    """Pick the profile by version, then by the platform given or by the editor bytes on disk."""
     profiles = json.loads((Path(helper) / 'compatibility.json').read_text())
-    profile = next((p for p in profiles if p.get('version') == version
-                    and p.get('platform') == 'darwin-arm64'), None)
-    if profile is None or not isinstance(profile.get('renderer'), dict):
-        raise ValueError('No reviewed renderer profile for this Codex version.')
+    candidates = [p for p in profiles if p.get('version') == version]
+    if target:
+        candidates = [p for p in candidates if p.get('platform') == target]
+    else:
+        # Python may run under Rosetta: reviewed bytes on disk decide before the processor name.
+        digests = {digest(value) for value in contents if value is not None}
+        known = [p for p in candidates if digests & {p.get('sourceSha256'), p.get('patchedSourceSha256')}]
+        host = [p for p in (known or candidates) if p.get('platform') == host_platform()]
+        candidates = host or known
+    if not candidates:
+        raise ValueError(f'Unsupported Codex version {version} on {target or host_platform()}; no files changed. '
+                         'Use --platform darwin-arm64 or darwin-x64 for a package built for another processor.')
+    profile = candidates[0]
+    if 'renderer' in profile and not isinstance(profile['renderer'], dict):
+        raise ValueError('Invalid reviewed renderer profile.')
     return profile
 
 
@@ -75,7 +95,11 @@ def patched_renderer(original, spec):
 
 
 def renderer_plan(extension, profile, installed_state, restore=False):
-    spec = profile['renderer']
+    spec = profile.get('renderer')
+    if spec is None:
+        if installed_state and installed_state.get('renderer') is not None:
+            raise ValueError('Installed renderer backup belongs to another profile.')
+        return {}, None, True
     if (not str(spec.get('path', '')).startswith('webview/assets/')
             or not str(spec.get('path', '')).endswith('.js')
             or not all(re.fullmatch(r'[a-f0-9]{64}', str(spec.get(k, '')))

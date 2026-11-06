@@ -69,7 +69,10 @@ payload=json.dumps({'results':[{'extensions':[{'publisher':{'publisherName':'Ope
     {'version':'99.0.0','targetPlatform':'darwin-arm64','properties':[{'key':'Microsoft.VisualStudio.Code.PreRelease','value':'true'}]},
     {'version':'98.0.0','targetPlatform':'linux-x64'}]}]}]}).encode()
 module.urllib.request.urlopen=lambda request,timeout:Response(gzip.compress(payload),'gzip')
-assert module.latest_stable()=={'latest':'26.1.1'}
+assert module.latest_stable('darwin-arm64')=={'latest':'26.1.1'}
+try:module.latest_stable('darwin-x64')
+except ValueError:pass
+else:raise AssertionError('A package for another processor was accepted')
 print('Bounded raw/gzip metadata and offline selection passed')
 `;
   const output = execFileSync('python3', ['-c', script, path.resolve(__dirname, '../scripts/update_package.py')], {

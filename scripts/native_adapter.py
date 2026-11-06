@@ -2,30 +2,51 @@
 from pathlib import Path
 import argparse
 import json
+import re
 
 from renderer_adapter import digest, inside, profile_for, read_optional, renderer_plan, transact
 
 ROOT = Path(__file__).resolve().parent.parent
 LEGACY_BRIDGE = '58e379627717ccb9e20862cc40ab1e7879919e328c9fc9a92a36629562b9bfd1'
+TIMEOUT_ANCHOR = 'timeoutMs:3e4})},3e4)}'
 
 
-def patch_native(original):
+def startup_timeout(profile):
+    value = (profile or {}).get('startupTimeoutMs')
+    if value is None:
+        return None
+    if type(value) is not int or not 30000 <= value <= 300000:
+        raise ValueError('Invalid startup timeout in the reviewed profile.')
+    return value
+
+
+def patch_native(original, profile=None):
     text = original.decode('utf-8')
+    timeout = startup_timeout(profile)
     attach_anchor = 'i!=null&&this.registerOnDidDisposeForWebviewPanel(r,i),await this.initializeWebview(r.webview,"panel",r.onDidDispose,()=>{this.onPanelReady(r)})'
     message_anchor = 'async handleMessage(e,r){switch(r.type){case"ready":break;'
-    new_anchor = 'async createNewPanel(){let e=F1("/extension/panel/new"),'
-    navigate_anchor = 'case"navigate-in-new-editor-tab":{let n=F1(r.path);'
-    startup_anchor = 'startup:{reach:c=>o.handleStartupPhase(c)}'
+    new_match = re.findall(r'async createNewPanel\(\)\{let e=([A-Za-z_$][\w$]*)\("/extension/panel/new"\),', text)
+    startup_match = re.findall(r'startup:\{reach:([A-Za-z_$][\w$]*)=>o\.handleStartupPhase\(\1\)\}', text)
+    if len(new_match) != 1 or len(startup_match) != 1:
+        raise ValueError('Codex editor structure does not match this adapter.')
+    route, phase = new_match[0], startup_match[0]
+    new_anchor = f'async createNewPanel(){{let e={route}("/extension/panel/new"),'
+    navigate_anchor = f'case"navigate-in-new-editor-tab":{{let n={route}(r.path);'
+    startup_anchor = f'startup:{{reach:{phase}=>o.handleStartupPhase({phase})}}'
     watchdog_anchor = 'e.html=await this.getWebviewContent(e),s.start()'
     for anchor in [attach_anchor, message_anchor, new_anchor, navigate_anchor, startup_anchor, watchdog_anchor]:
         if text.count(anchor) != 1:
             raise ValueError('Codex editor structure does not match this adapter.')
+    if timeout is not None and text.count(TIMEOUT_ANCHOR) != 1:
+        raise ValueError('Codex startup watchdog does not match this adapter.')
     patched = text.replace(attach_anchor, 'i!=null&&this.registerOnDidDisposeForWebviewPanel(r,i),await require("./session-tabs-native.cjs").attach(this,r,e.uri,i),await require("./session-tabs-native.cjs").initializePanel(this,r,()=>this.initializeWebview(r.webview,"panel",r.onDidDispose,()=>{this.onPanelReady(r)}))')
     patched = patched.replace(message_anchor, 'async handleMessage(e,r){require("./session-tabs-native.cjs").observe(this,e,r);switch(r.type){case"ready":break;')
-    patched = patched.replace(new_anchor, 'async createNewPanel(){if(await require("./session-tabs-native.cjs").openFreshPanel(this))return;let e=require("./session-tabs-native.cjs").freshPanelUri(F1("/extension/panel/new")),')
-    patched = patched.replace(navigate_anchor, 'case"navigate-in-new-editor-tab":{if(r.path==="/extension/panel/new"&&await require("./session-tabs-native.cjs").openFreshPanel(this,e,r.replaceCurrentEditor))break;let n=require("./session-tabs-native.cjs").freshPanelUri(F1(r.path));')
-    patched = patched.replace(startup_anchor, 'startup:{reach:c=>{o.handleStartupPhase(c),require("./session-tabs-native.cjs").startupPhase(this,e,c)}}')
+    patched = patched.replace(new_anchor, f'async createNewPanel(){{if(await require("./session-tabs-native.cjs").openFreshPanel(this))return;let e=require("./session-tabs-native.cjs").freshPanelUri({route}("/extension/panel/new")),')
+    patched = patched.replace(navigate_anchor, f'case"navigate-in-new-editor-tab":{{if(r.path==="/extension/panel/new"&&await require("./session-tabs-native.cjs").openFreshPanel(this,e,r.replaceCurrentEditor))break;let n=require("./session-tabs-native.cjs").freshPanelUri({route}(r.path));')
+    patched = patched.replace(startup_anchor, f'startup:{{reach:{phase}=>{{o.handleStartupPhase({phase}),require("./session-tabs-native.cjs").startupPhase(this,e,{phase})}}}}')
     patched = patched.replace(watchdog_anchor, 'e.html=await this.getWebviewContent(e),require("./session-tabs-native.cjs").watchPanelStartup(e,s)')
+    if timeout is not None:
+        patched = patched.replace(TIMEOUT_ANCHOR, f'timeoutMs:{timeout}}})}},{timeout})}}')
     return patched.encode('utf-8')
 
 
@@ -35,19 +56,18 @@ def run():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--restore', action='store_true')
     mode.add_argument('--check', action='store_true')
+    parser.add_argument('--platform')
     args = parser.parse_args()
     extension = args.extension_dir.resolve()
     package = json.loads(inside(extension, 'package.json').read_text())
     if package.get('publisher', '').lower() != 'openai' or package.get('name') != 'chatgpt':
         raise ValueError('Refusing to modify an unrelated extension.')
-    if package.get('version') != '26.1021.22027':
-        raise ValueError(f"Unsupported Codex version {package.get('version')}; no files changed.")
-    profile = profile_for(ROOT, package['version'])
     source = inside(extension, 'out/extension.js')
     backup = inside(extension, 'out/extension.js.before-session-tabs')
     manifest = inside(extension, 'out/session-tabs-backup.json')
     bridge = inside(extension, 'out/session-tabs-native.cjs')
     current, saved, state_bytes = read_optional(source), read_optional(backup), read_optional(manifest)
+    profile = profile_for(ROOT, package.get('version'), args.platform, (saved, current))
     if current is None:
         raise ValueError('The native editor is missing.')
     state = json.loads(state_bytes) if state_bytes is not None else None
@@ -83,7 +103,7 @@ def run():
         print('Original Codex editor and renderer restored. Reload the VS Code window to activate them.')
         return
 
-    patched = patch_native(original)
+    patched = patch_native(original, profile)
     if profile.get('patchedSourceSha256') and digest(patched) != profile['patchedSourceSha256']:
         raise ValueError('Patched editor checksum does not match the reviewed profile.')
     if args.check:

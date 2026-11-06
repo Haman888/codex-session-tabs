@@ -16,7 +16,7 @@ def read_metadata(response, limit=20 * 1024 * 1024):
     data = response.read(limit + 1)
     if len(data) > limit:
         raise ValueError('Marketplace response is too large.')
-    if response.headers.get('Content-Encoding') == 'gzip':
+    if (response.headers.get('Content-Encoding') or '').lower() in ('gzip', 'x-gzip'):
         # Bound decoded output as well as transfer bytes; never expand it all first.
         with gzip.GzipFile(fileobj=io.BytesIO(data)) as stream:
             data = stream.read(limit + 1)
@@ -25,7 +25,7 @@ def read_metadata(response, limit=20 * 1024 * 1024):
     return data
 
 
-def latest_stable():
+def latest_stable(target):
     body = json.dumps({'filters': [{'criteria': [{'filterType': 7, 'value': 'OpenAI.chatgpt'}],
                                    'pageSize': 1}], 'flags': 17}).encode()
     request = urllib.request.Request('https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery',
@@ -36,12 +36,12 @@ def latest_stable():
         extension = json.loads(data)['results'][0]['extensions'][0]
     if extension.get('publisher', {}).get('publisherName', '').lower() != 'openai' or extension.get('extensionName') != 'chatgpt':
         raise ValueError('Marketplace returned an unrelated extension.')
-    versions = [item for item in extension['versions'] if item.get('targetPlatform') == 'darwin-arm64'
+    versions = [item for item in extension['versions'] if item.get('targetPlatform') == target
                 and not any(prop.get('key') == 'Microsoft.VisualStudio.Code.PreRelease' and prop.get('value') == 'true'
                             for prop in item.get('properties', []))]
     versions.sort(key=lambda item: tuple(map(int, item['version'].split('.'))), reverse=True)
     if not versions:
-        raise ValueError('No stable Codex package was found for Mac arm64.')
+        raise ValueError(f'No stable Codex package was found for {target}.')
     return {'latest': versions[0]['version']}
 
 
@@ -57,7 +57,8 @@ def download_official(profile, output):
     with urllib.request.urlopen(request, timeout=45) as response:
         if urllib.parse.urlparse(response.url).scheme != 'https':
             raise ValueError('Insecure package redirect refused.')
-        stream = gzip.GzipFile(fileobj=response) if response.headers.get('Content-Encoding') == 'gzip' else response
+        encoded = (response.headers.get('Content-Encoding') or '').lower() in ('gzip', 'x-gzip')
+        stream = gzip.GzipFile(fileobj=response) if encoded else response
         with Path(output).open('xb') as file:
             while data := stream.read(1024 * 1024):
                 size += len(data)
@@ -129,8 +130,11 @@ def prepare(vsix, destination, helper, profile):
                 target.chmod(0o755 if (member.external_attr >> 16) & 0o111 else 0o644)
         vendor = extracted / 'openai.chatgpt'
         (destination / 'unpacked/extension').rename(vendor)
-        process = subprocess.run(['python3', str(helper / 'scripts/native_adapter.py'),
-                                  '--extension-dir', str(vendor)], capture_output=True, text=True, timeout=30)
+        command = ['python3', str(helper / 'scripts/native_adapter.py')]
+        if profile.get('platform'):
+            command += ['--platform', profile['platform']]
+        process = subprocess.run(command + ['--extension-dir', str(vendor)],
+                                 capture_output=True, text=True, timeout=30)
         if process.returncode:
             raise ValueError('Adapter refused this package.')
         if digest(vendor / 'out/extension.js') != profile['patchedSourceSha256']:
@@ -162,11 +166,14 @@ if __name__ == '__main__':
     parser.add_argument('--verify-tree')
     parser.add_argument('--expected-tree')
     parser.add_argument('--latest', action='store_true')
+    parser.add_argument('--platform')
     parser.add_argument('--download-profile')
     parser.add_argument('--output')
     args = parser.parse_args()
     if args.latest:
-        print(json.dumps(latest_stable()))
+        if not args.platform:
+            parser.error('--platform is required with --latest.')
+        print(json.dumps(latest_stable(args.platform)))
     elif args.download_profile:
         if not args.output:
             parser.error('--output is required for a download.')

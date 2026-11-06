@@ -4,6 +4,7 @@ const vscode = require('vscode');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { newChatWaitMs, profileFor } = require('../update-core');
 
 async function until(predicate, description, timeout = 15000) {
   const end = Date.now() + timeout;
@@ -25,6 +26,7 @@ async function run() {
     const manifest = require('../package.json');
     const extension = vscode.extensions.getExtension(`${manifest.publisher}.${manifest.name}`);
     const vendor = vscode.extensions.getExtension('openai.chatgpt');
+    const rendererWait = newChatWaitMs(profileFor(require('../compatibility.json'), vendor.packageJSON.version));
     assert.equal(fs.realpathSync(extension.extensionPath), fs.realpathSync(process.env.CODEX_TABS_PROBE_HELPER));
     assert.equal(fs.realpathSync(vendor.extensionPath), fs.realpathSync(process.env.CODEX_TABS_PROBE_VENDOR));
     assert.equal(vscode.workspace.workspaceFolders, undefined);
@@ -46,7 +48,7 @@ async function run() {
     const first = tabs()[0].input.uri;
     await vscode.commands.executeCommand('chatgpt.newCodexPanel');
     await until(() => tabs().length === 2 && api.titles.bindings.size === 2,
-      'Second native New Chat creates another tab after the first renderer is ready', 45000);
+      'Second native New Chat creates another tab after the first renderer is ready', rendererWait);
     const second = tabs().find(tab => tab.input.uri.toString() !== first.toString()).input.uri;
     assert.ok(first.query.includes('sessionTab='));
     assert.notEqual(first.toString(), second.toString());
@@ -55,7 +57,7 @@ async function run() {
     report.checks.nativeNewChat = true;
     report.phase = 'interface'; save();
     await until(() => [...api.titles.bindings.values()].every(binding => binding.isReady?.() === true),
-      'The actual Codex chat interface must finish its renderer handshake', 45000);
+      'The actual Codex chat interface must finish its renderer handshake', rendererWait);
     report.checks.interface = true;
     report.phase = 'language'; save();
     const languageConfig = vscode.workspace.getConfiguration('codexSessionTabs');

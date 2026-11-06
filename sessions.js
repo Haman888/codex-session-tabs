@@ -78,20 +78,25 @@ async function readSessionNames(home) {
   return new Map([...names].map(([id, value]) => [id, value.title]));
 }
 
-async function readSessions({ home = codexHome() } = {}) {
+// The schema changes only with a Codex update; one sqlite3 run per refresh is enough.
+const columnCache = new Map();
+
+async function readSessions({ home = codexHome(), run = query } = {}) {
   const database = await findDatabase(home);
   if (!database) return [];
-  const columns = new Set((await query(database, 'PRAGMA table_info(threads)')).map(column => column.name));
+  const columns = columnCache.get(database)
+    || new Set((await run(database, 'PRAGMA table_info(threads)')).map(column => column.name));
   for (const required of ['id', 'title', 'cwd', 'source', 'archived', 'updated_at']) {
-    if (!columns.has(required)) throw new Error(t('error.historySchema', { column: required }));
+    if (!columns.has(required)) { columnCache.delete(database); throw new Error(t('error.historySchema', { column: required })); }
   }
   const name = columns.has('name') ? "COALESCE(NULLIF(name, ''), NULLIF(title, ''), '')" : "COALESCE(NULLIF(title, ''), '')";
   const pinned = columns.has('is_pinned') ? 'COALESCE(is_pinned, 0)' : '0';
   // Only top-level interactive chats: never execute or display subagent sessions.
-  const rows = await query(database, `SELECT id, ${name} AS title, cwd,
+  const rows = await run(database, `SELECT id, ${name} AS title, cwd,
     updated_at * 1000 AS updatedAt, ${pinned} AS pinned
     FROM threads WHERE archived = 0 AND source IN ('vscode', 'cli', 'appServer')
-    ORDER BY pinned DESC, updated_at DESC`);
+    ORDER BY pinned DESC, updated_at DESC`).catch(error => { columnCache.delete(database); throw error; });
+  columnCache.set(database, columns);
   // Codex keeps explicit/generated names in this append-only index. SQLite's
   // title can revert to the first prompt during hydration, so it is a fallback.
   const names = await readSessionNames(home);
@@ -99,7 +104,7 @@ async function readSessions({ home = codexHome() } = {}) {
     .filter(row => /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(row.id));
 }
 
-function createSessionReader({ load = readSessions, now = Date.now, ttl = 5000, backoff = 30000, maxBackoff = 300000 } = {}) {
+function createSessionReader({ load = readSessions, now = Date.now, ttl = 5000, backoff = 30000, maxBackoff = 300000, minInterval = 5000 } = {}) {
   const states = new Map();
   const stateFor = home => {
     const key = path.resolve(home);
@@ -114,13 +119,20 @@ function createSessionReader({ load = readSessions, now = Date.now, ttl = 5000, 
     const state = stateFor(home);
     state.retryAt = 0; state.expires = 0; state.failures = 0;
   };
+  // The database changed: reload soon, not more often than minInterval, keeping any failure backoff.
+  const invalidate = ({ home = codexHome() } = {}) => {
+    const state = stateFor(home);
+    if (state.flight) state.dirty = true;
+    state.expires = Math.min(state.expires, (state.loadedAt ?? 0) + minInterval);
+  };
   const list = async ({ home = codexHome(), folders = [], scope = 'all' } = {}) => {
     const state = stateFor(home);
     if (!state.flight && now() >= state.retryAt && (state.rows === undefined || now() >= state.expires)) {
       state.flight = (async () => {
         try {
           state.rows = await load({ home });
-          state.error = undefined; state.failures = 0; state.retryAt = 0; state.expires = now() + ttl;
+          state.error = undefined; state.failures = 0; state.retryAt = 0; state.loadedAt = now();
+          state.expires = state.loadedAt + (state.dirty ? minInterval : ttl); state.dirty = false;
         } catch {
           state.failures++;
           state.retryAt = now() + Math.min(maxBackoff, backoff * 2 ** Math.min(state.failures - 1, 10));
@@ -134,9 +146,10 @@ function createSessionReader({ load = readSessions, now = Date.now, ttl = 5000, 
     if (state.error && state.rows === undefined) throw state.error;
     return (state.rows || []).filter(row => scope !== 'workspace' || isInWorkspace(row.cwd, folders));
   };
-  return { list, status, reset };
+  return { list, status, reset, invalidate };
 }
 
-const reader = createSessionReader();
-module.exports = { codexHome, findDatabase, isInWorkspace, listSessions: reader.list, readSessionNames,
-  getSessionStatus: reader.status, resetSessions: reader.reset, createSessionReader, createReadOnlyQuery };
+// The file watcher invalidates the cache when the database changes, so idle refreshes reuse it longer.
+const reader = createSessionReader({ ttl: 30000 });
+module.exports = { codexHome, findDatabase, isInWorkspace, listSessions: reader.list, readSessionNames, readSessions,
+  getSessionStatus: reader.status, resetSessions: reader.reset, invalidateSessions: reader.invalidate, createSessionReader, createReadOnlyQuery };

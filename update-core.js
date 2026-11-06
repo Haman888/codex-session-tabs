@@ -32,8 +32,21 @@ async function helperHash(helper) {
   return hash.digest('hex');
 }
 
-function profileFor(profiles, version) {
-  return profiles.find(profile => profile.version === version && profile.platform === 'darwin-arm64');
+function hostPlatform() {
+  return `${process.platform}-${process.arch}`;
+}
+
+function profileFor(profiles, version, platform = hostPlatform()) {
+  return profiles.find(profile => profile.version === version && profile.platform === platform);
+}
+
+function supportedProfile(profiles, platform = hostPlatform()) {
+  return profiles.filter(profile => profile.platform === platform).at(-1);
+}
+
+// A new chat may take as long as the Codex startup watchdog allows, plus a margin.
+function newChatWaitMs(profile) {
+  return Math.max(45000, (profile?.startupTimeoutMs ?? 0) + 15000);
 }
 
 async function inspectInstalled(folder, profiles, helper) {
@@ -199,4 +212,4 @@ class UpdateManager {
   }
 }
 
-module.exports = { hashFile, atomicJson, helperHash, profileFor, inspectInstalled, downloadOfficial, UpdateManager };
+module.exports = { hashFile, atomicJson, helperHash, hostPlatform, profileFor, supportedProfile, newChatWaitMs, inspectInstalled, downloadOfficial, UpdateManager };

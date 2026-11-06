@@ -7,10 +7,12 @@ const vscode = require('vscode');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const { codexHome, listSessions, getSessionStatus, resetSessions } = require('./sessions');
+const { codexHome, listSessions, getSessionStatus, resetSessions, invalidateSessions } = require('./sessions');
 const { Titles, createReadTracker } = require('./titles');
 const { prepareBadges } = require('./badges');
 const { activateUpdates } = require('./update-ui');
+const { profileFor, newChatWaitMs } = require('./update-core');
+const profiles = require('./compatibility.json');
 
 const VIEW = 'codexSessionTabs.sessions';
 const EDITOR = 'chatgpt.conversationEditor';
@@ -55,12 +57,13 @@ function newSession() {
     scheme: 'openai-codex', authority: 'route', path: '/extension/panel/new',
     query: `sessionTab=${randomUUID()}`,
   }));
-  let remaining = 45000, previous = Date.now();
+  const version = vscode.extensions.getExtension('openai.chatgpt')?.packageJSON?.version;
+  let remaining = newChatWaitMs(profileFor(profiles, version)), previous = Date.now();
   while (remaining > 0) {
     const binding = titles?.bindings.get(uri.toString());
     if (binding?.isReady?.()) return uri;
     if (binding && !binding.isReady) throw new Error(t('error.adapterOutdated'));
-    if (!openTabs().some(row => row.key === uri.toString())) throw new Error(t('error.tabClosed'));
+    if (!openTabs().some(row => row.key === uri.toString())) throw Object.assign(new Error(t('error.tabClosed')), { quiet: true });
     const now = Date.now();
     if (binding?.isVisible?.() !== false) remaining -= now - previous;
     previous = now;
@@ -83,10 +86,16 @@ function openTabs() {
       if (!match && uri.path !== '/extension/panel/new') continue;
       const key = uri.toString();
       const id = match?.[1] || titles?.idFor(key);
-      rows.push({ key, uri, tab, group, id, title: titles?.titleFor(id, tab.label) || tab.label });
+      rows.push({ key, uri, tab, group, id, title: titles?.titleFor(id, tab.label) || tab.label,
+        fullTitle: titles?.fullTitleFor(id, tab.label) || tab.label });
     }
   }
   return rows;
+}
+
+function withTitles(row) {
+  return { ...row, title: titles?.titleFor(row.id, row.title) || row.title,
+    fullTitle: titles?.fullTitleFor(row.id, row.title) || row.title };
 }
 
 function readableActiveTab() {
@@ -124,16 +133,17 @@ class SessionsProvider {
   refresh() { this.events.fire(undefined); }
   async list() {
     return (await listSessions({ folders: this.folders, scope: this.scope }))
-      .map(row => ({ ...row, title: titles?.titleFor(row.id, row.title) || row.title }));
+      .map(withTitles);
   }
   async getChildren() {
     try {
       // The open section always mirrors actual tabs, regardless of history scope.
       const tabs = openTabs();
       const sessions = (await listSessions({ folders: this.folders, scope: this.kind === 'open' ? 'all' : this.scope }))
-        .map(row => ({ ...row, title: titles?.titleFor(row.id, row.title) || row.title }));
+        .map(withTitles);
       const status = getSessionStatus();
       this.error = status.error && (status.stale ? t('history.stale', { message: status.error }) : status.error);
+      this.stale = Boolean(status.error && status.stale);
       if (!this.error) this.lastError = undefined;
       this.updateDescription?.();
       if (this.kind === 'history') {
@@ -141,9 +151,11 @@ class SessionsProvider {
         return sessions.filter(row => !ids.has(row.id));
       }
       const metadata = new Map(sessions.map(row => [row.id, row]));
-      return tabs.map(row => ({ ...metadata.get(row.id), ...row, title: metadata.get(row.id)?.title || row.title }));
+      return tabs.map(row => ({ ...metadata.get(row.id), ...row, title: metadata.get(row.id)?.title || row.title,
+        fullTitle: metadata.get(row.id)?.fullTitle || row.fullTitle }));
     } catch (error) {
       this.error = error.message;
+      this.stale = false;
       if (this.lastError !== error.message) this.output.appendLine(error.stack || String(error));
       this.lastError = error.message;
       this.updateDescription?.();
@@ -161,7 +173,7 @@ class SessionsProvider {
       : unread ? new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('charts.orange'))
       : new vscode.ThemeIcon(this.kind === 'history' ? 'history' : 'comment-discussion');
     item.description = path.basename(session.cwd || '') || undefined;
-    item.tooltip = [title, running ? t('session.working') : unread && t('session.completed'), session.cwd, session.updatedAt && t('session.updated', { date: formatDate(session.updatedAt) })].filter(Boolean).join('\n');
+    item.tooltip = [session.fullTitle || title, running ? t('session.working') : unread && t('session.completed'), session.cwd, session.updatedAt && t('session.updated', { date: formatDate(session.updatedAt) })].filter(Boolean).join('\n');
     item.command = { command: 'codexSessionTabs.open', title: t('command.open'), arguments: [session] };
     return item;
   }
@@ -180,7 +192,8 @@ function activate(context) {
   };
   history.updateDescription = () => {
     historyTree.description = history.scope === 'workspace' ? t('scope.workspace') : t('scope.all');
-    historyTree.message = history.error ? t('history.failed', { message: history.error }) : undefined;
+    historyTree.message = !history.error ? undefined
+      : history.stale ? history.error : t('history.failed', { message: history.error });
   };
   provider.updateDescription();
   history.updateDescription();
@@ -205,8 +218,8 @@ function activate(context) {
   const safe = fn => async (...args) => {
     try { return await fn(...args); }
     catch (error) {
-      output.appendLine(error.stack || String(error));
-      vscode.window.showErrorMessage(`Codex Session Tabs: ${errorText(error)}`);
+      output.appendLine(error?.quiet ? error.message : error.stack || String(error));
+      if (!error?.quiet) vscode.window.showErrorMessage(`Codex Session Tabs: ${errorText(error)}`);
       return undefined;
     }
   };
@@ -219,7 +232,7 @@ function activate(context) {
       return;
     }
     const selected = await vscode.window.showQuickPick(sessions.map(row => ({
-      label: row.title.replace(/\s+/g, ' ').trim(), description: row.cwd,
+      label: (row.fullTitle || row.title).replace(/\s+/g, ' ').trim(), description: row.cwd,
       detail: formatDate(row.updatedAt), session: row,
     })), { title: t('history.title'), placeHolder: t('history.search'), matchOnDescription: true });
     if (selected) return openSession(selected.session);
@@ -235,7 +248,7 @@ function activate(context) {
       try { await newSession(); return { handled: true, opened: true }; }
       catch (error) {
         output.appendLine(error.message);
-        vscode.window.showErrorMessage(errorText(error));
+        if (!error?.quiet) vscode.window.showErrorMessage(errorText(error));
         return { handled: true, opened: false };
       }
     }),
@@ -248,8 +261,9 @@ function activate(context) {
         row = selected?.row;
       }
       if (!row) return;
-      const name = newName ?? await vscode.window.showInputBox({
-        title: t('rename.title'), value: row.title,
+      // Menus pass (resource, {groupId, editorIndex}): only a string is a name.
+      const name = typeof newName === 'string' ? newName : await vscode.window.showInputBox({
+        title: t('rename.title'), value: row.fullTitle || row.title,
         prompt: t('rename.prompt'),
         validateInput: value => !value.trim() ? t('rename.required') : value.trim().length > 120 ? t('rename.tooLong') : undefined,
       });
@@ -259,7 +273,10 @@ function activate(context) {
     vscode.commands.registerCommand('codexSessionTabs.show', show),
     vscode.commands.registerCommand('codexSessionTabs.history', safe(pickFromHistory)),
     vscode.commands.registerCommand('codexSessionTabs.close', safe(async row => {
-      const existing = openTabs().find(item => item.key === row?.key);
+      const rows = openTabs();
+      const existing = row?.key ? rows.find(item => item.key === row.key)
+        : row?.scheme ? rows.find(item => item.uri.toString() === row.toString())
+        : rows.find(item => item.tab === vscode.window.tabGroups.activeTabGroup.activeTab);
       if (existing) await vscode.window.tabGroups.close(existing.tab);
     })),
     vscode.commands.registerCommand('codexSessionTabs.refresh', () => { resetSessions(); refresh(); }),
@@ -287,21 +304,30 @@ function activate(context) {
     vscode.workspace.onDidChangeWorkspaceFolders(refresh),
     vscode.window.tabGroups.onDidChangeTabs(refresh),
     vscode.window.tabGroups.onDidChangeTabGroups(refresh),
-    vscode.window.onDidChangeWindowState(() => readTracker.update()),
+    vscode.window.onDidChangeWindowState(state => { readTracker.update(); if (state?.focused) refresh(); }),
     tree.onDidChangeVisibility(() => { if (tree.visible) refresh(); }),
     historyTree.onDidChangeVisibility(() => { if (historyTree.visible) history.refresh(); }),
   );
   // Watch database metadata only, never transcript contents. SQLite writes to WAL.
-  let debounce;
+  let debounce, trailing;
   try {
     const watcher = fs.watch(codexHome(), (_event, name) => {
       if (!/^state_\d+\.sqlite(?:-wal)?$/.test(String(name || '')) && name !== 'session_index.jsonl') return;
       clearTimeout(debounce);
-      debounce = setTimeout(refresh, 750);
+      debounce = setTimeout(() => {
+        invalidateSessions?.();
+        refresh();
+        // A change inside the minimum reload interval is read by this follow-up, focused or not.
+        clearTimeout(trailing);
+        trailing = setTimeout(refresh, 5500);
+      }, 750);
     });
-    context.subscriptions.push({ dispose: () => { watcher.close(); clearTimeout(debounce); } });
+    context.subscriptions.push({ dispose: () => { watcher.close(); clearTimeout(debounce); clearTimeout(trailing); } });
   } catch (error) { output.appendLine(t('log.watcherFailed', { message: errorText(error) })); }
-  const timer = setInterval(() => { if (openTabs().length || tree.visible || historyTree.visible) refresh(); }, 2500);
+  // A background window waits: the file watcher and a focus change refresh it.
+  const timer = setInterval(() => {
+    if (vscode.window.state.focused && (openTabs().length || tree.visible || historyTree.visible)) refresh();
+  }, 2500);
   context.subscriptions.push({ dispose: () => clearInterval(timer) });
   if (context.extensionMode === vscode.ExtensionMode.Production && !context.globalState.get('introduced', false)) {
     show().then(() => context.globalState.update('introduced', true), error => output.appendLine(error.message));

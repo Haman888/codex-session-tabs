@@ -7,7 +7,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
-const { UpdateManager, inspectInstalled, helperHash, profileFor } = require('./update-core');
+const { UpdateManager, inspectInstalled, helperHash, hostPlatform, profileFor, supportedProfile, newChatWaitMs } = require('./update-core');
 
 function runChild(command, args, { env, signal, timeout = 180000, resultReady } = {}) {
   return new Promise((resolve, reject) => {
@@ -54,8 +54,9 @@ function runChild(command, args, { env, signal, timeout = 180000, resultReady } 
 }
 
 async function latestStable(profiles, helper, signal) {
-  const result = JSON.parse(await runChild('python3', [path.join(helper, 'scripts/update_package.py'), '--latest'], { signal, timeout: 45000 }));
-  return { ...result, supported: profiles.at(-1).version };
+  const result = JSON.parse(await runChild('python3', [path.join(helper, 'scripts/update_package.py'), '--latest',
+    '--platform', hostPlatform()], { signal, timeout: 45000 }));
+  return { ...result, supported: supportedProfile(profiles)?.version };
 }
 
 function activateUpdates(context, output, isBusy) {
@@ -115,7 +116,9 @@ function activateUpdates(context, output, isBusy) {
           // A background/covered test window must continue loading its renderer.
           // These Chromium scheduling flags apply only to the disposable process.
           '--disable-renderer-backgrounding', '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows'], { env, signal, timeout: 110000,
+          '--disable-backgrounding-occluded-windows'], { env, signal,
+          // Two renderer starts at most, each as long as the profile lets Codex start.
+          timeout: 20000 + 2 * newChatWaitMs(profileFor(profiles, candidate.version)),
           resultReady: async () => {
             const report = JSON.parse(await fs.readFile(reportFile, 'utf8'));
             // This only ends the disposable process. UpdateManager independently
@@ -168,8 +171,15 @@ function activateUpdates(context, output, isBusy) {
     manager.download = async (_profile, file) => fs.copyFile(process.env.CODEX_TABS_LAB_OFFICIAL, file);
   }
   const run = async restoring => {
-    if (process.platform !== 'darwin' || process.arch !== 'arm64' || vscode.env.remoteName) {
+    const supported = supportedProfile(profiles);
+    if (process.platform !== 'darwin' || vscode.env.remoteName || !supported) {
       throw new Error(t('update.macOnly'));
+    }
+    if (!restoring && !testMode) {
+      const action = t('action.startCheck');
+      const answer = await vscode.window.showWarningMessage(t('update.confirmCheck', { version: supported.version }),
+        { modal: true }, action);
+      if (answer !== action) return { status: 'cancelled' };
     }
     return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
       title: restoring ? t('update.progressRestore') : t('update.progressCheck'), cancellable: !restoring },
@@ -179,12 +189,12 @@ function activateUpdates(context, output, isBusy) {
       try {
         if (!restoring) {
           const release = testMode && process.env.CODEX_TABS_LAB_OFFICIAL
-            ? { latest: profiles.at(-1).version } : await latestStable(profiles, helper, abort.signal);
+            ? { latest: supported.version } : await latestStable(profiles, helper, abort.signal);
           if (!profileFor(profiles, release.latest)) {
-            await vscode.window.showInformationMessage(t('update.latestUnsupported', { version: release.latest }));
+            vscode.window.showInformationMessage(t('update.latestUnsupported', { version: release.latest })).then(undefined, () => {});
           }
         }
-        const result = restoring ? await manager.restore() : await manager.run(profiles.at(-1).version, abort.signal);
+        const result = restoring ? await manager.restore() : await manager.run(supported.version, abort.signal);
         await check();
         if (['installed', 'restored'].includes(result.status)) {
           await context.globalState.update('managedCodexVersion', result.version);
@@ -222,9 +232,6 @@ function activateUpdates(context, output, isBusy) {
               if (await manager.recovery()) return run(true);
               return run(false);
             })(); }, () => {});
-        } else if (last.status === 'ready' && !await manager.recovery()) {
-          vscode.window.showInformationMessage(t('update.setupNotice'), t('action.setup'))
-            .then(action => { if (action) return safe(() => run(false))(); }, () => {});
         }
       }
       return last;
@@ -244,7 +251,7 @@ function activateUpdates(context, output, isBusy) {
     }),
     vscode.extensions.onDidChange(() => check().catch(error => output.appendLine(error.message))),
   );
-  const timer = setInterval(() => check().catch(error => output.appendLine(error.message)), 15000);
+  const timer = setInterval(() => check().catch(error => output.appendLine(error.message)), 60000);
   context.subscriptions.push({ dispose: () => { disposed = true; clearInterval(timer); } });
   check().catch(error => output.appendLine(error.message));
   return { manager, check, get status() { return last; } };

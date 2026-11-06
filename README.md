@@ -2,11 +2,13 @@
 
 English · [Русский](README.ru.md)
 
+**Fork of [kasiaalena/codex-session-tabs](https://github.com/kasiaalena/codex-session-tabs).** It adds Intel Mac support (official Codex 26.1007.21434), starts quietly without a setup reminder and fixes several issues; see the [CHANGELOG](CHANGELOG.md). It keeps the extension ID `kasiaalena.codex-session-tabs`, so it replaces the original installation and keeps its state.
+
 Independent Codex editor tabs, an open-sessions sidebar, short titles and orange completion indicators for VS Code. An unofficial companion to the OpenAI Codex extension; this project is not affiliated with or supported by OpenAI.
 
-**Supported setup:** local VS Code on macOS with Apple silicon, official Codex **26.1021.22027**, Python **3.9+** and the system `/usr/bin/sqlite3`. Tested with VS Code **1.145.0**. The manifest accepts VS Code 1.106+, but older releases, Intel Macs, Windows, Linux and remote extension hosts have not been verified.
+**Supported setup:** local VS Code on macOS, Python **3.9+** and the system `/usr/bin/sqlite3`. Compatibility profiles: Intel (`darwin-x64`) with official Codex **26.1007.21434**, tested on an Intel Mac in this fork; Apple silicon (`darwin-arm64`) with official Codex **26.1021.22027**, unchanged from upstream, where it was tested. This fork has not been run on Apple silicon hardware. Tested with VS Code **1.145.0**. The manifest accepts VS Code 1.106+, but older releases, Windows, Linux and remote extension hosts have not been verified.
 
-**Preview 0.4.3.** The installer is `codex-session-tabs-0.4.3.vsix`. Download the matching version from [Releases](https://github.com/kasiaalena/codex-session-tabs/releases), or build it from source. The package ID is `kasiaalena.codex-session-tabs`. An earlier local installation with a different ID needs a separate state transfer before replacement. This build does not transfer that state automatically. Keep the earlier installation until a transfer has been prepared and checked.
+**Preview 0.4.4 (fork).** Installers: `codex-session-tabs-0.4.4-darwin-arm64.vsix` for Apple silicon and `codex-session-tabs-0.4.4-darwin-x64.vsix` for Intel. Download them from this fork's [Releases](https://github.com/Haman888/codex-session-tabs/releases), or build them from source. The package ID is `kasiaalena.codex-session-tabs`. An earlier local installation with a different ID needs a separate state transfer before replacement. This build does not transfer that state automatically. Keep the earlier installation until a transfer has been prepared and checked.
 
 ## Features
 
@@ -30,7 +32,7 @@ The selection immediately changes the companion's commands, menus, sections, not
 
 1. Install the official Codex extension (`openai.chatgpt`) and sign in to your own account.
 2. Download the matching VSIX from Releases, or build it as described below. Run **Extensions: Install from VSIX…** in VS Code and select the file.
-3. Run **Codex: Check and update Codex**, or choose **Set up protection** in the notification. The official extension directory is detected automatically.
+3. Run **Codex: Check and update Codex** and confirm the dialog that names the download size. The official extension directory is detected automatically.
 4. Wait for verification, then review the separate installation confirmation. The supported version may be older than the latest Marketplace release; the dialog names the version being installed.
 5. After current replies finish, run **Developer: Reload Window**. The companion never reloads the working window without your action.
 
@@ -50,7 +52,7 @@ The status-bar shield shows adapter health. Checks run at startup, when installe
 
 Recovery is tied to the companion build. Upgrading the companion can require another verification even when the official Codex version is unchanged. An intact package for an older companion is not proof that the new combination works. Do not edit recovery receipts to bypass verification.
 
-Until a valid package is saved, the setup reminder can appear once per window launch. After setup it should stop. For errors, use the **Codex Session Tabs** Output channel. Avoid sharing raw reports that may include local paths or conversation names.
+This fork shows no setup reminder: nothing is downloaded and no test window opens unless you run **Codex: Check and update Codex** and confirm the dialog. For errors, use the **Codex Session Tabs** Output channel. Avoid sharing raw reports that may include local paths or conversation names.
 
 ## History and privacy
 
@@ -71,7 +73,7 @@ npm test
 npm run package
 ```
 
-Packaging uses the Python standard library and downloads no build dependencies. Output: `dist/codex-session-tabs-0.4.3.vsix`. You can also run `python3 scripts/package.py` without npm.
+Packaging uses the Python standard library and downloads no build dependencies. Output: `dist/codex-session-tabs-0.4.4-darwin-arm64.vsix` on Apple silicon or `dist/codex-session-tabs-0.4.4-darwin-x64.vsix` on Intel. To build for the other processor, run `python3 scripts/package.py darwin-arm64` or `python3 scripts/package.py darwin-x64`.
 
 `npm test` uses small artificial fixtures in system temporary storage. It does not use real Codex history or launch GUI windows. The runtime protection check uses a separate empty profile.
 
@@ -96,7 +98,7 @@ CODEX_EXTENSION_DIR="$(code --locate-extension openai.chatgpt)"
 python3 scripts/native_adapter.py --extension-dir "$CODEX_EXTENSION_DIR" --check
 ```
 
-This returns the actual directory without assuming a platform suffix. With a custom extensions directory or profile, pass the same options used to launch VS Code. If the official extension is not found, stop here.
+This returns the actual directory without assuming a platform suffix. With a custom extensions directory or profile, pass the same options used to launch VS Code. If the official extension is not found, stop here. The adapter picks the compatibility profile whose reviewed files are on disk; for a package built for another processor, add `--platform darwin-arm64` or `--platform darwin-x64`.
 
 For clean removal, first restore the original official files:
 
