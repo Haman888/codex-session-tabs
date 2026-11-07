@@ -144,6 +144,18 @@ test('corrupt recovery or a changed helper build cannot be restored', async t =>
   assert.equal(await f.manager.recovery(), undefined, 'Translations are part of the verified companion build');
 });
 
+test('a quick recovery check finds a saved package without reading all of it; restoring reads it all', async t => {
+  const f = await fixture(t);
+  await f.manager.run('1.0.0');
+  const saved = await f.manager.recovery();
+  await fs.writeFile(saved.file, 'damaged');
+  assert.equal(await f.manager.recovery(), undefined);
+  assert.equal((await f.manager.recovery({ checkFile: false })).version, '1.0.0');
+  await assert.rejects(f.manager.restore(), /резервной версии нет/);
+  await fs.rm(saved.file);
+  assert.equal(await f.manager.recovery({ checkFile: false }), undefined);
+});
+
 test('health check recognizes missing, unsupported, original, valid and changed adapters', async t => {
   const f = await fixture(t), folder = path.join(f.root, 'vendor');
   await fs.mkdir(path.join(folder, 'out'), { recursive: true });

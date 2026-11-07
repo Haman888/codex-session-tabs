@@ -12,7 +12,7 @@ const core = require('../update-core');
 const root = path.resolve(__dirname, '..');
 const disposable = () => ({ dispose() {} });
 
-function updatesHost({ answer } = {}) {
+function updatesHost({ answer, status = 'ready', recovery } = {}) {
   setLanguage('en');
   const seen = { info: [], warnings: [], errors: [], progress: 0, runs: [], restores: 0 };
   const commands = new Map();
@@ -42,9 +42,9 @@ function updatesHost({ answer } = {}) {
     hostPlatform: () => 'darwin-x64',
     profileFor: (profiles, version) => core.profileFor(profiles, version, 'darwin-x64'),
     supportedProfile: profiles => core.supportedProfile(profiles, 'darwin-x64'),
-    inspectInstalled: async () => ({ status: 'ready', version: '26.1007.21434', message: 'ready' }),
+    inspectInstalled: async () => ({ status, version: '26.1007.21434', message: status }),
     UpdateManager: class {
-      async recovery() { return undefined; }
+      async recovery() { return recovery; }
       async run(version) { seen.runs.push(version); return { status: 'verified', version }; }
       async restore() { seen.restores++; return { status: 'cancelled' }; }
     },
@@ -159,6 +159,23 @@ test('the protection check asks first and does nothing when the dialog is closed
   await accepted.commands.get('codexSessionTabs.restoreCodex')();
   assert.equal(accepted.seen.warnings.length, 1, 'Restoring a saved package needs no download confirmation');
   assert.equal(accepted.seen.progress, 2);
+});
+
+test('the status button offers actions only when something can be done', async () => {
+  const ready = updatesHost();
+  await ready.commands.get('codexSessionTabs.updateStatus')();
+  assert.deepEqual(ready.seen.info.at(-1), ['ready'], 'A verified adapter needs neither a check nor a restore');
+  const reload = updatesHost({ status: 'reload-required' });
+  await reload.commands.get('codexSessionTabs.updateStatus')();
+  assert.deepEqual(reload.seen.info.at(-1), ['reload-required'], 'An installed version only waits for a reload');
+  const changed = updatesHost({ status: 'changed' });
+  await changed.commands.get('codexSessionTabs.updateStatus')();
+  assert.deepEqual(changed.seen.info.at(-1), ['changed', 'Check and update'], 'Restore needs a saved package');
+  const saved = updatesHost({ status: 'changed', recovery: { version: '26.1007.21434' } });
+  await saved.commands.get('codexSessionTabs.updateStatus')();
+  assert.deepEqual(saved.seen.info.at(-1), ['changed', 'Check and update', 'Restore']);
+  assert.deepEqual([...ready.seen.runs, ...changed.seen.runs, ...saved.seen.runs], []);
+  assert.equal(ready.seen.progress + changed.seen.progress + saved.seen.progress, 0);
 });
 
 test('closing a new tab before it loads is not reported as an error', async () => {

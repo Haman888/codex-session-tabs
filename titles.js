@@ -19,6 +19,9 @@ function compactTitle(value) {
   return `${result || title.slice(0, 35)}…`;
 }
 
+function snapshot(map) { return new Map([...map].map(([key, value]) => [key, JSON.stringify(value)])); }
+function asMap(set) { return new Map([...set].map(id => [id, true])); }
+
 function sameIcon(actual, expected) {
   if (actual === expected) return true;
   return Boolean(actual?.light && actual?.dark && expected?.light && expected?.dark
@@ -70,6 +73,8 @@ class Titles {
     this.counter = 0;
     this.options = options;
     this.unread = new Set(context.globalState.get('unreadSessions', []));
+    this.saved = { tabIdentities: snapshot(this.identities), customTitles: snapshot(this.custom),
+      draftTitles: snapshot(this.drafts), unreadSessions: snapshot(asMap(this.unread)) };
     this.turns = new Map();
     this.persistence = Promise.resolve();
     this.localizeDrafts();
@@ -121,12 +126,21 @@ class Titles {
       // Preserve recently closed resources too, for VS Code's Reopen Closed Tab.
       while (this.identities.size > 500) this.identities.delete(this.identities.keys().next().value);
       while (this.drafts.size > 500) this.drafts.delete(this.drafts.keys().next().value);
-      await this.context.globalState.update('tabIdentities', Object.fromEntries(this.identities));
-      await this.context.globalState.update('customTitles', Object.fromEntries(this.custom));
-      await this.context.globalState.update('draftTitles', Object.fromEntries(this.drafts));
-      await this.context.globalState.update('unreadSessions', [...this.unread]);
+      for (const [name, local] of [['tabIdentities', this.identities], ['customTitles', this.custom],
+        ['draftTitles', this.drafts], ['unreadSessions', asMap(this.unread)]]) await this.save(name, local);
     }).catch(error => this.output.appendLine(t('log.saveTitles', { message: errorText(error) })));
     return this.persistence;
+  }
+  async save(name, local) {
+    const stored = this.context.globalState.get(name);
+    const result = name === 'unreadSessions'
+      ? Object.fromEntries((Array.isArray(stored) ? stored : []).map(id => [id, true]))
+      : { ...(stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}) };
+    const before = this.saved[name], now = snapshot(local);
+    for (const [key, value] of now) if (before.get(key) !== value) result[key] = JSON.parse(value);
+    for (const key of before.keys()) if (!now.has(key)) delete result[key];
+    await this.context.globalState.update(name, name === 'unreadSessions' ? Object.keys(result) : result);
+    this.saved[name] = now;
   }
   async attach(binding) {
     if (this.options.iconsReady) await this.options.iconsReady;
@@ -134,7 +148,8 @@ class Titles {
     this.bindings.set(binding.key, { ...binding, id });
     if (id) this.identities.set(binding.key, id);
     else this.draftFor(binding.key);
-    await this.sync();
+    this.applyUI();
+    this.sync().catch(error => this.output.appendLine(errorText(error)));
     return { id };
   }
   isUnread(id) { return this.unread.has(id); }
@@ -220,6 +235,7 @@ class Titles {
       if (this.lastSyncError !== error.message) this.output.appendLine(t('log.titleRefresh', { message: errorText(error) }));
       this.lastSyncError = error.message;
     }
+    this.historyRead = true;
     this.applyUI();
   }
   applyUI() {
@@ -232,6 +248,8 @@ class Titles {
         binding.setUnread(unread, this.options.icons);
         changed = true;
       }
+      // Until history is read once, a saved conversation keeps its label instead of a generic one.
+      if (binding.id && !this.historyRead && !this.custom.has(binding.id)) continue;
       const fallback = this.drafts.get(binding.key)?.title || binding.placeholder || t(binding.id ? 'chat.fallback' : 'draft.fallback');
       const title = cleanTitle(binding.id ? this.titleFor(binding.id, fallback) : fallback);
       if (!title || (binding.getTitle ? binding.getTitle() === title : binding.lastTitle === title)) continue;

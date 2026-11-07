@@ -137,13 +137,13 @@ class UpdateManager {
       } catch { /* A lock owned by another process must not be removed. */ }
     }
   }
-  async recovery() {
+  async recovery({ checkFile = true } = {}) {
     try {
       const receipt = JSON.parse(await fs.readFile(this.receiptPath, 'utf8'));
       if (!/^[a-f0-9]{64}$/.test(receipt.sha256) || !profileFor(this.profiles, receipt.version)
         || receipt.helper !== await helperHash(this.helper)) return undefined;
       const file = path.join(this.storage, `${receipt.sha256}.vsix`);
-      if (await hashFile(file) !== receipt.sha256) return undefined;
+      if (checkFile ? await hashFile(file) !== receipt.sha256 : !(await fs.stat(file)).isFile()) return undefined;
       return { ...receipt, file };
     } catch { return undefined; }
   }

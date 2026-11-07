@@ -8,7 +8,7 @@
 
 **Поддерживаемая среда:** локальный VS Code на macOS, Python **3.9+** и системный `/usr/bin/sqlite3`. Профили совместимости: Intel (`darwin-x64`) с официальным Codex **26.1007.21434** — проверен на Mac с Intel в этом форке; Apple silicon (`darwin-arm64`) с официальным Codex **26.1021.22027** — без изменений относительно оригинала, где он и проверялся. На Mac с Apple silicon этот форк не запускался. Проверено на VS Code **1.145.0**. В манифесте указан минимум 1.106, но более старые версии VS Code, Windows, Linux и удалённые хосты не проверены.
 
-**Предварительный выпуск 0.4.4 (форк).** Установщики: `codex-session-tabs-0.4.4-darwin-arm64.vsix` для Apple silicon и `codex-session-tabs-0.4.4-darwin-x64.vsix` для Intel. Скачайте их со страницы [релизов](https://github.com/Haman888/codex-session-tabs/releases) этого форка или соберите из исходников. Идентификатор пакета: `kasiaalena.codex-session-tabs`. Для замены прежней локальной установки с другим идентификатором нужен отдельный перенос состояния. Эта сборка не переносит его автоматически. Прежнюю установку следует сохранить до подготовки и проверки переноса.
+**Предварительный выпуск 0.4.5 (форк).** Установщики: `codex-session-tabs-0.4.5-darwin-arm64.vsix` для Apple silicon и `codex-session-tabs-0.4.5-darwin-x64.vsix` для Intel. Скачайте их со страницы [релизов](https://github.com/Haman888/codex-session-tabs/releases) этого форка или соберите из исходников. Идентификатор пакета: `kasiaalena.codex-session-tabs`. Для замены прежней локальной установки с другим идентификатором нужен отдельный перенос состояния. Эта сборка не переносит его автоматически. Прежнюю установку следует сохранить до подготовки и проверки переноса.
 
 ## Возможности
 
@@ -73,7 +73,7 @@ npm test
 npm run package
 ```
 
-Сборка использует стандартную библиотеку Python и не скачивает зависимости. Установщик: `dist/codex-session-tabs-0.4.4-darwin-arm64.vsix` на Apple silicon или `dist/codex-session-tabs-0.4.4-darwin-x64.vsix` на Intel. Для другого процессора выполните `python3 scripts/package.py darwin-arm64` или `python3 scripts/package.py darwin-x64`.
+Сборка использует стандартную библиотеку Python и не скачивает зависимости. Установщик: `dist/codex-session-tabs-0.4.5-darwin-arm64.vsix` на Apple silicon или `dist/codex-session-tabs-0.4.5-darwin-x64.vsix` на Intel. Для другого процессора выполните `python3 scripts/package.py darwin-arm64` или `python3 scripts/package.py darwin-x64`.
 
 `npm test` создаёт небольшие искусственные данные в системной временной папке. Он не использует настоящую историю Codex и не запускает GUI-окна. Проверка при настройке защиты использует отдельный пустой профиль.
 

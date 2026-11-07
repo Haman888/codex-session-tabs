@@ -243,8 +243,13 @@ function activateUpdates(context, output, isBusy) {
     vscode.commands.registerCommand('codexSessionTabs.restoreCodex', safe(() => run(true))),
     vscode.commands.registerCommand('codexSessionTabs.updateStatus', async () => {
       const state = await check();
+      if (['ready', 'reload-required'].includes(state.status)) {
+        await vscode.window.showInformationMessage(state.message);
+        return state;
+      }
       const checkLabel = t('action.checkUpdate'), restoreLabel = t('action.restore');
-      const action = await vscode.window.showInformationMessage(state.message, checkLabel, restoreLabel);
+      const recovered = await manager.recovery({ checkFile: false });
+      const action = await vscode.window.showInformationMessage(state.message, checkLabel, ...(recovered ? [restoreLabel] : []));
       if (action === checkLabel) return safe(() => run(false))();
       if (action === restoreLabel) return safe(() => run(true))();
       return state;

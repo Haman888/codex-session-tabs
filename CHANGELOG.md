@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.5 — fork (Haman888/codex-session-tabs)
+
+- Two VS Code windows no longer overwrite each other's tab links, names, drafts and unread marks. VS Code keeps one shared copy of this state; each window now writes only what it changed on top of the latest stored value, so a tab, name or removal made in one window is neither lost nor brought back by the other.
+- A new tab no longer waits for history to load before Codex starts the panel. Names from history appear as soon as they are read.
+- The Codex Tabs status button shows only the message when the adapter is verified or a reload is pending. Restore is offered only when a saved package exists, and finding it no longer reads the whole package.
+
 ## 0.4.4 — fork (Haman888/codex-session-tabs)
 
 - Intel Mac support: a compatibility profile for official Codex **26.1007.21434** (`darwin-x64`). The native hooks find the minified names of that build; it needs no renderer change, because 26.1007 does not start thousands of script preloads.
