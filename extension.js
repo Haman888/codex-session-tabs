@@ -309,18 +309,32 @@ function activate(context) {
     historyTree.onDidChangeVisibility(() => { if (historyTree.visible) history.refresh(); }),
   );
   // Watch database metadata only, never transcript contents. SQLite writes to WAL.
-  let debounce, trailing;
+  // S3 fix: Use throttling with maxWait to prevent indefinite delay during active work
+  let debounce, trailing, lastFired = 0;
+  const minDelay = 750, maxWait = 3000;
   try {
     const watcher = fs.watch(codexHome(), (_event, name) => {
       if (!/^state_\d+\.sqlite(?:-wal)?$/.test(String(name || '')) && name !== 'session_index.jsonl') return;
       clearTimeout(debounce);
-      debounce = setTimeout(() => {
+      const now = Date.now();
+      const timeSinceLastFire = now - lastFired;
+
+      // If maxWait exceeded, fire immediately; otherwise debounce
+      if (timeSinceLastFire >= maxWait) {
+        lastFired = now;
         invalidateSessions?.();
         refresh();
-        // A change inside the minimum reload interval is read by this follow-up, focused or not.
         clearTimeout(trailing);
         trailing = setTimeout(refresh, 5500);
-      }, 750);
+      } else {
+        debounce = setTimeout(() => {
+          lastFired = Date.now();
+          invalidateSessions?.();
+          refresh();
+          clearTimeout(trailing);
+          trailing = setTimeout(refresh, 5500);
+        }, minDelay);
+      }
     });
     context.subscriptions.push({ dispose: () => { watcher.close(); clearTimeout(debounce); clearTimeout(trailing); } });
   } catch (error) { output.appendLine(t('log.watcherFailed', { message: errorText(error) })); }

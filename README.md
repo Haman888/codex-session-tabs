@@ -64,6 +64,10 @@ The adapter modifies reviewed files in the installed official extension and keep
 
 OpenAI's extension and artwork are not included in this repository or companion VSIX. Indicator icons are derived locally from the installed extension. Original and patched official packages stay on the user's computer.
 
+## Known harmless errors
+
+The official Codex may log `fs/readFile` errors for `~/.codex/attachments/pasted-text-attachments.json` at startup. This comes from Codex itself, not from the companion, and is harmless — Codex creates the file on first use. Do not create it manually.
+
 ## Build and test
 
 From the repository root, with Node.js 22+ and Python 3.9+:

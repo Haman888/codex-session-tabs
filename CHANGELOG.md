@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2 — fork (Haman888/codex-session-tabs)
+
+- **S3:** Fixed fs.watch debounce indefinite delay during active work — now uses throttling with 3s maxWait
+- **A1:** Documented harmless `fs/readFile` error from Codex itself in README
+
 ## 0.5.1 — fork (Haman888/codex-session-tabs)
 
 - **U7:** Fixed restore warning reading VSIX three times — now uses `checkFile: false` to skip redundant check
