@@ -121,7 +121,9 @@ class UpdateManager {
       if (error.code !== 'EEXIST') throw error;
       const stat = await fs.lstat(file);
       if (stat.isSymbolicLink()) throw new Error(t('update.badLock'));
-      const previous = JSON.parse(await fs.readFile(file, 'utf8'));
+      let previous;
+      try { previous = JSON.parse(await fs.readFile(file, 'utf8')); }
+      catch { throw new Error(t('update.lockUnverified')); }
       if (!Number.isSafeInteger(previous.pid) || previous.pid < 1) throw new Error(t('update.lockUnverified'));
       try { process.kill(previous.pid, 0); throw new Error(t('update.alreadyRunning')); }
       catch (failure) { if (failure.code !== 'ESRCH') throw failure; }

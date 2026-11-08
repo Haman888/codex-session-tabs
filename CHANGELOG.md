@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.7 — fork (Haman888/codex-session-tabs)
+
+- **U3:** Empty or malformed `operation.lock` no longer blocks update checks forever — handled gracefully with proper error
+- **C2:** Custom title matching history is now removed to let future Codex renames through
+- **C5:** `unreadSessions` capped at 500 entries to prevent unbounded growth
+
 ## 0.4.6 — fork (Haman888/codex-session-tabs)
 
 - **S2:** Tab title recovery after first history read failure — `historyRead` flag now set only on success

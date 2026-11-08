@@ -178,6 +178,11 @@ class Titles {
     this.turns.set(id, nextState());
     if (this.options.isActive?.(id)) this.unread.delete(id);
     else this.unread.add(id);
+    // Cap unread sessions at 500 to prevent unbounded growth
+    if (this.unread.size > 500) {
+      const oldest = [...this.unread].slice(0, this.unread.size - 500);
+      for (const id of oldest) this.unread.delete(id);
+    }
     this.persist();
     this.applyUI();
     this.changed();
@@ -232,6 +237,10 @@ class Titles {
       this.metadata = new Map((await this.loadSessions()).map(row => [row.id, row]));
       this.lastSyncError = undefined;
       this.historyRead = true;
+      // Remove custom titles that now match history to let future renames through
+      for (const [id, custom] of this.custom) {
+        if (this.metadata.get(id)?.title === custom) this.custom.delete(id);
+      }
     } catch (error) {
       if (this.lastSyncError !== error.message) this.output.appendLine(t('log.titleRefresh', { message: errorText(error) }));
       this.lastSyncError = error.message;
