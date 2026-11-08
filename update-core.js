@@ -193,6 +193,15 @@ class UpdateManager {
       // an existing known-good recovery when admitting a newer candidate.
       const previous = await this.recovery();
       if (!previous) await atomicJson(this.receiptPath, receipt);
+      // U6 fix: Clean up old cached VSIX files after saving new receipt
+      try {
+        const files = await fs.readdir(this.storage);
+        for (const file of files) {
+          if (/^[0-9a-f]{64}\.vsix$/.test(file) && file !== `${candidateHash}.vsix`) {
+            await fs.unlink(path.join(this.storage, file)).catch(() => {});
+          }
+        }
+      } catch { /* Cleanup is best-effort */ }
       if (!await this.confirmInstall(version)) return { status: 'verified', version };
       if (this.isBusy()) throw new Error(t('update.busy'));
       signal?.throwIfAborted();

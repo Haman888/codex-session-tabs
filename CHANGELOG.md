@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0 — fork (Haman888/codex-session-tabs)
+
+- **U6:** Old cached VSIX files now automatically cleaned up after verifying new version
+- **A8:** All python3 invocations now use `-I` flag to ignore user site-packages
+- **Improvement:** Better isolation from user Python environment
+
 ## 0.5.3 — fork (Haman888/codex-session-tabs)
 
 - **U8:** Fixed stale lock race between two windows — now renames stale lock instead of unlinking to prevent simultaneous entry

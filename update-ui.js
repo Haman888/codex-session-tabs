@@ -58,7 +58,8 @@ function runChild(command, args, { env, signal, timeout = 180000, resultReady } 
 }
 
 async function latestStable(profiles, helper, signal) {
-  const result = JSON.parse(await runChild('python3', [path.join(helper, 'scripts/update_package.py'), '--latest',
+  // A8 fix: Use python3 -I to ignore user site-packages
+  const result = JSON.parse(await runChild('python3', ['-I', path.join(helper, 'scripts/update_package.py'), '--latest',
     '--platform', hostPlatform()], { signal, timeout: 45000 }));
   return { ...result, supported: supportedProfile(profiles)?.version };
 }
@@ -73,7 +74,7 @@ function activateUpdates(context, output, isBusy) {
   bar.command = 'codexSessionTabs.updateStatus';
   const manager = new UpdateManager({ storage, helper, profiles, isBusy,
     download: async (profile, file, signal) => {
-      await runChild('python3', [path.join(helper, 'scripts/update_package.py'),
+      await runChild('python3', ['-I', path.join(helper, 'scripts/update_package.py'),
         '--download-profile', JSON.stringify(profile), '--output', file], { signal, timeout: 600000 });
     },
     prepare: async (original, job, profile, signal) => {
@@ -85,7 +86,7 @@ function activateUpdates(context, output, isBusy) {
       return JSON.parse(result);
     },
     verifyCandidate: async (candidate, signal) => {
-      await runChild('python3', [path.join(helper, 'scripts/update_package.py'),
+      await runChild('python3', ['-I', path.join(helper, 'scripts/update_package.py'),
         '--verify-tree', candidate.vendor, '--expected-tree', candidate.treeSha256], { signal });
     },
     probe: async (candidate, _job, evidence, signal) => {
