@@ -15,12 +15,12 @@ describe('0.4.7 fixes', () => {
     await fs.writeFile(lockFile, '');
     const manager = new UpdateManager({ storage, helper: '/tmp', profiles: [], verifyCandidate: async () => {} });
     const err1 = await manager.locked(async () => 'ok').catch(e => e);
-    assert.match(err1.message, /lock.*verified/i, 'empty lock should be reported as unverified');
+    assert.match(err1.message, /verify.*lock/i, 'empty lock should be reported as unverified');
 
     // Malformed JSON
     await fs.writeFile(lockFile, '{invalid');
     const err2 = await manager.locked(async () => 'ok').catch(e => e);
-    assert.match(err2.message, /lock.*verified/i, 'malformed lock should be reported as unverified');
+    assert.match(err2.message, /verify.*lock/i, 'malformed lock should be reported as unverified');
 
     // Valid but stale lock (fake pid that doesn't exist)
     await fs.writeFile(lockFile, JSON.stringify({ pid: 999999, nonce: 'x' }));
@@ -87,12 +87,12 @@ describe('0.4.7 fixes', () => {
       return sessions;
     };
 
-    const titles = new Titles(context, loadSessions, () => {}, { appendLine() {} });
+    const titles = new Titles(context, loadSessions, () => {}, { appendLine() {} }, { isActive: () => false });
     titles.applyUI = () => {};
     titles.persist = () => {};
     await titles.performSync();
 
-    // Mark 600 sessions as unread
+    // Mark 600 sessions as unread via activity
     for (let i = 0; i < 600; i++) {
       titles.activity(`session-${i}`, { phase: 'completed', turnId: `turn-${i}` });
     }
