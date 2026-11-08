@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.6 — fork (Haman888/codex-session-tabs)
+
+- **S2:** Tab title recovery after first history read failure — `historyRead` flag now set only on success
+- **C3:** Large conversation history no longer exceeds 8 MB reader buffer — titles capped at 300 chars, history capped at 5000 rows
+- **U1:** Update notice without saved recovery now shows "Check and update" instead of "Restore Codex"
+
 ## 0.4.5 — fork (Haman888/codex-session-tabs)
 
 - Two VS Code windows no longer overwrite each other's tab links, names, drafts and unread marks. VS Code keeps one shared copy of this state; each window now writes only what it changed on top of the latest stored value, so a tab, name or removal made in one window is neither lost nor brought back by the other.

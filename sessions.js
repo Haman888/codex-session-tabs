@@ -92,10 +92,12 @@ async function readSessions({ home = codexHome(), run = query } = {}) {
   const name = columns.has('name') ? "COALESCE(NULLIF(name, ''), NULLIF(title, ''), '')" : "COALESCE(NULLIF(title, ''), '')";
   const pinned = columns.has('is_pinned') ? 'COALESCE(is_pinned, 0)' : '0';
   // Only top-level interactive chats: never execute or display subagent sessions.
-  const rows = await run(database, `SELECT id, ${name} AS title, cwd,
+  // A long first prompt can be a title: cut it in SQL so a big history never exceeds the 8 MB reader buffer.
+  const rows = await run(database, `SELECT id, substr(${name}, 1, 300) AS title, cwd,
     updated_at * 1000 AS updatedAt, ${pinned} AS pinned
     FROM threads WHERE archived = 0 AND source IN ('vscode', 'cli', 'appServer')
-    ORDER BY pinned DESC, updated_at DESC`).catch(error => { columnCache.delete(database); throw error; });
+    ORDER BY pinned DESC, updated_at DESC
+    LIMIT 5000`).catch(error => { columnCache.delete(database); throw error; });
   columnCache.set(database, columns);
   // Codex keeps explicit/generated names in this append-only index. SQLite's
   // title can revert to the first prompt during hydration, so it is a fallback.

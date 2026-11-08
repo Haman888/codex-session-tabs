@@ -231,11 +231,11 @@ class Titles {
     try {
       this.metadata = new Map((await this.loadSessions()).map(row => [row.id, row]));
       this.lastSyncError = undefined;
+      this.historyRead = true;
     } catch (error) {
       if (this.lastSyncError !== error.message) this.output.appendLine(t('log.titleRefresh', { message: errorText(error) }));
       this.lastSyncError = error.message;
     }
-    this.historyRead = true;
     this.applyUI();
   }
   applyUI() {

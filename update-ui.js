@@ -227,7 +227,9 @@ function activateUpdates(context, output, isBusy) {
       if (notice !== last.status && context.extensionMode === vscode.ExtensionMode.Production) {
         notice = last.status;
         if (!['ready', 'reload-required'].includes(last.status)) {
-          vscode.window.showWarningMessage(t('update.canRestore', { message: last.message }), t('action.restoreCodex'))
+          const saved = await manager.recovery({ checkFile: false });
+          vscode.window.showWarningMessage(saved ? t('update.canRestore', { message: last.message }) : last.message,
+            saved ? t('action.restoreCodex') : t('action.checkUpdate'))
             .then(action => { if (action) return safe(async () => {
               if (await manager.recovery()) return run(true);
               return run(false);
