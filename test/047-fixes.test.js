@@ -33,18 +33,19 @@ describe('0.4.7 fixes', () => {
   it('C2: custom title matching history is removed to let future renames through', async () => {
     const { Titles } = require('../titles.js');
     const output = { appendLine() {} };
+    let customStore = { 'session-1': 'Old Custom Name' };
     const context = {
       globalState: {
         get(key, fallback) {
           const data = {
             tabIdentities: {},
-            customTitles: { 'session-1': 'Old Custom Name' },
+            customTitles: customStore,
             draftTitles: {},
             unreadSessions: []
           };
           return data[key] ?? fallback;
         },
-        async update() {}
+        async update(key, value) { if (key === 'customTitles') customStore = value; }
       },
       subscriptions: []
     };
@@ -52,13 +53,14 @@ describe('0.4.7 fixes', () => {
     // First sync: history has different name, custom stays
     const loadSessions1 = async () => [{ id: 'session-1', title: 'History Name', updatedAt: Date.now() }];
     const titles1 = new Titles(context, output, loadSessions1);
-    await titles1.refresh();
+    await titles1.performSync();
     assert.equal(titles1.custom.get('session-1'), 'Old Custom Name', 'custom title should stay when it differs from history');
 
     // Second sync: history now matches custom, custom removed
+    customStore = { 'session-1': 'Old Custom Name' };
     const loadSessions2 = async () => [{ id: 'session-1', title: 'Old Custom Name', updatedAt: Date.now() }];
     const titles2 = new Titles(context, output, loadSessions2);
-    await titles2.refresh();
+    await titles2.performSync();
     assert.equal(titles2.custom.has('session-1'), false, 'custom title matching history should be removed');
   });
 
@@ -86,11 +88,11 @@ describe('0.4.7 fixes', () => {
     };
 
     const titles = new Titles(context, output, loadSessions);
-    await titles.refresh();
+    await titles.performSync();
 
     // Mark 600 sessions as unread
     for (let i = 0; i < 600; i++) {
-      titles.markAsRead(`session-${i}`);
+      titles.activity(`session-${i}`, { phase: 'completed', turnId: `turn-${i}` });
     }
 
     assert.equal(titles.unread.size, 500, 'unread should be capped at 500');
