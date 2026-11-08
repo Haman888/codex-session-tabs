@@ -32,7 +32,6 @@ describe('0.4.7 fixes', () => {
 
   it('C2: custom title matching history is removed to let future renames through', async () => {
     const { Titles } = require('../titles.js');
-    const output = { appendLine() {} };
     let customStore = { 'session-1': 'Old Custom Name' };
     const context = {
       globalState: {
@@ -52,21 +51,22 @@ describe('0.4.7 fixes', () => {
 
     // First sync: history has different name, custom stays
     const loadSessions1 = async () => [{ id: 'session-1', title: 'History Name', updatedAt: Date.now() }];
-    const titles1 = new Titles(context, output, loadSessions1);
+    const titles1 = new Titles(context, loadSessions1, () => {}, { appendLine() {} });
+    titles1.applyUI = () => {};
     await titles1.performSync();
     assert.equal(titles1.custom.get('session-1'), 'Old Custom Name', 'custom title should stay when it differs from history');
 
     // Second sync: history now matches custom, custom removed
     customStore = { 'session-1': 'Old Custom Name' };
     const loadSessions2 = async () => [{ id: 'session-1', title: 'Old Custom Name', updatedAt: Date.now() }];
-    const titles2 = new Titles(context, output, loadSessions2);
+    const titles2 = new Titles(context, loadSessions2, () => {}, { appendLine() {} });
+    titles2.applyUI = () => {};
     await titles2.performSync();
     assert.equal(titles2.custom.has('session-1'), false, 'custom title matching history should be removed');
   });
 
   it('C5: unreadSessions is capped at 500 entries', async () => {
     const { Titles } = require('../titles.js');
-    const output = { appendLine() {} };
     const saved = new Map();
     const context = {
       globalState: {
@@ -87,7 +87,9 @@ describe('0.4.7 fixes', () => {
       return sessions;
     };
 
-    const titles = new Titles(context, output, loadSessions);
+    const titles = new Titles(context, loadSessions, () => {}, { appendLine() {} });
+    titles.applyUI = () => {};
+    titles.persist = () => {};
     await titles.performSync();
 
     // Mark 600 sessions as unread
