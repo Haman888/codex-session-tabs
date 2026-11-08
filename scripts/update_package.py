@@ -65,9 +65,7 @@ def latest_stable(target):
             for prop in item.get("properties", [])
         )
     ]
-    versions.sort(
-        key=lambda item: tuple(map(int, item["version"].split("."))), reverse=True
-    )
+    versions.sort(key=lambda item: tuple(map(int, item["version"].split("."))), reverse=True)
     if not versions:
         raise ValueError(f"No stable Codex package was found for {target}.")
     return {"latest": versions[0]["version"]}
@@ -78,35 +76,50 @@ def download_official(profile, output):
     if (
         url.scheme != "https"
         or url.hostname != "marketplace.visualstudio.com"
-        or not url.path.startswith(
-            "/_apis/public/gallery/publishers/OpenAI/vsextensions/chatgpt/"
-        )
+        or not url.path.startswith("/_apis/public/gallery/publishers/OpenAI/vsextensions/chatgpt/")
     ):
         raise ValueError("Only the official Codex package source is accepted.")
-    request = urllib.request.Request(
-        profile["url"], headers={"Accept-Encoding": "identity"}
-    )
+    request = urllib.request.Request(profile["url"], headers={"Accept-Encoding": "identity"})
     checksum = hashlib.sha256()
     size = 0
-    # urllib on macOS respects the system proxy. TLS verification is never disabled.
-    with urllib.request.urlopen(request, timeout=45) as response:
-        if urllib.parse.urlparse(response.url).scheme != "https":
-            raise ValueError("Insecure package redirect refused.")
-        encoded = (response.headers.get("Content-Encoding") or "").lower() in (
-            "gzip",
-            "x-gzip",
-        )
-        stream = gzip.GzipFile(fileobj=response) if encoded else response
-        with Path(output).open("xb") as file:
-            while data := stream.read(1024 * 1024):
-                size += len(data)
-                if size > 1500 * 1024 * 1024:
-                    raise ValueError("Package download is too large.")
-                checksum.update(data)
-                file.write(data)
-    if checksum.hexdigest() != profile["vsixSha256"]:
-        raise ValueError("Official package checksum mismatch.")
-    return {"sha256": checksum.hexdigest(), "bytes": size}
+    # A7 fix: Clean up partial download on error
+    try:
+        # urllib on macOS respects the system proxy. TLS verification is never disabled.
+        with urllib.request.urlopen(request, timeout=45) as response:
+            # A7 fix: Validate redirect hosts
+            redirect_url = urllib.parse.urlparse(response.url)
+            if redirect_url.scheme != "https":
+                raise ValueError("Insecure package redirect refused.")
+            allowed_hosts = {
+                "marketplace.visualstudio.com",
+                "vscode.download.prss.microsoft.com",
+                "az764295.vo.msecnd.net",
+                "vscode.blob.core.windows.net",
+            }
+            if redirect_url.hostname not in allowed_hosts:
+                raise ValueError(f"Redirect to untrusted host: {redirect_url.hostname}")
+            encoded = (response.headers.get("Content-Encoding") or "").lower() in (
+                "gzip",
+                "x-gzip",
+            )
+            stream = gzip.GzipFile(fileobj=response) if encoded else response
+            with Path(output).open("xb") as file:
+                while data := stream.read(1024 * 1024):
+                    size += len(data)
+                    if size > 1500 * 1024 * 1024:
+                        raise ValueError("Package download is too large.")
+                    checksum.update(data)
+                    file.write(data)
+        if checksum.hexdigest() != profile["vsixSha256"]:
+            raise ValueError("Official package checksum mismatch.")
+        return {"sha256": checksum.hexdigest(), "bytes": size}
+    except Exception:
+        # A7 fix: Clean up partial download on any error
+        try:
+            Path(output).unlink(missing_ok=True)
+        except:
+            pass
+        raise
 
 
 def digest(file):
@@ -244,20 +257,14 @@ if __name__ == "__main__":
     elif args.download_profile:
         if not args.output:
             parser.error("--output is required for a download.")
-        print(
-            json.dumps(
-                download_official(json.loads(args.download_profile), args.output)
-            )
-        )
+        print(json.dumps(download_official(json.loads(args.download_profile), args.output)))
     elif args.verify_tree:
         if tree_digest(args.verify_tree) != args.expected_tree:
             raise ValueError("The staged package changed during testing.")
         print(json.dumps({"verified": True}))
     else:
         if not all([args.vsix, args.destination, args.helper, args.profile]):
-            parser.error(
-                "Package, destination, helper and approved profile are required."
-            )
+            parser.error("Package, destination, helper and approved profile are required.")
         print(
             json.dumps(
                 prepare(

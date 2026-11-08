@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 — fork (Haman888/codex-session-tabs)
+
+- **A7:** Enhanced download_official security — validate redirect hosts and clean up partial downloads on error
+
 ## 0.6.0 — fork (Haman888/codex-session-tabs)
 
 - **U6:** Old cached VSIX files now automatically cleaned up after verifying new version
