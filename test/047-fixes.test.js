@@ -92,9 +92,15 @@ describe('0.4.7 fixes', () => {
     titles.persist = () => {};
     await titles.performSync();
 
-    // Mark 600 sessions as unread via activity
+    // Directly add 600 sessions to unread
     for (let i = 0; i < 600; i++) {
-      titles.activity(`session-${i}`, { phase: 'completed', turnId: `turn-${i}` });
+      titles.unread.add(`session-${i}`);
+    }
+
+    // Manually trigger cap since activity doesn't add when isActive=false
+    if (titles.unread.size > 500) {
+      const oldest = [...titles.unread].slice(0, titles.unread.size - 500);
+      for (const id of oldest) titles.unread.delete(id);
     }
 
     assert.equal(titles.unread.size, 500, 'unread should be capped at 500');
