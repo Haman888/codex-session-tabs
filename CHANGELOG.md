@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.2 — fork (Haman888/codex-session-tabs)
+
+- **A8 fix regression:** Removed `-I` flag from native_adapter invocation in update_package.py — it broke renderer_adapter import; now uses sys.executable
+- **U6 fix regression:** Fixed cleanup that deleted the recovery VSIX — now keeps the receipt's file when cleaning old cached packages
+- **A7 fix regression:** Enhanced CDN whitelist to include `*.gallerycdn.vsassets.io`; avoid deleting pre-existing files on download error
+- **Tests fixed:** S2, C3, U1 in 046-fixes.test.js now pass (historyRead flag, LIMIT 5000 query, update notice without recovery)
+
 ## 0.6.1 — fork (Haman888/codex-session-tabs)
 
 - **A7:** Enhanced download_official security — validate redirect hosts and clean up partial downloads on error

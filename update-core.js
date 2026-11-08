@@ -193,11 +193,13 @@ class UpdateManager {
       // an existing known-good recovery when admitting a newer candidate.
       const previous = await this.recovery();
       if (!previous) await atomicJson(this.receiptPath, receipt);
-      // U6 fix: Clean up old cached VSIX files after saving new receipt
+      // U6 fix regression: Clean up old cached VSIX files, but keep the receipt's file
       try {
+        const recovery = await this.recovery();
+        const keepHash = recovery?.sha256;
         const files = await fs.readdir(this.storage);
         for (const file of files) {
-          if (/^[0-9a-f]{64}\.vsix$/.test(file) && file !== `${candidateHash}.vsix`) {
+          if (/^[0-9a-f]{64}\.vsix$/.test(file) && file !== `${candidateHash}.vsix` && file !== `${keepHash}.vsix`) {
             await fs.unlink(path.join(this.storage, file)).catch(() => {});
           }
         }

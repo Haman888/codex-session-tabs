@@ -7,6 +7,7 @@ import io
 import json
 import stat
 import subprocess
+import sys
 import urllib.parse
 import urllib.request
 import zipfile
@@ -65,7 +66,9 @@ def latest_stable(target):
             for prop in item.get("properties", [])
         )
     ]
-    versions.sort(key=lambda item: tuple(map(int, item["version"].split("."))), reverse=True)
+    versions.sort(
+        key=lambda item: tuple(map(int, item["version"].split("."))), reverse=True
+    )
     if not versions:
         raise ValueError(f"No stable Codex package was found for {target}.")
     return {"latest": versions[0]["version"]}
@@ -76,17 +79,21 @@ def download_official(profile, output):
     if (
         url.scheme != "https"
         or url.hostname != "marketplace.visualstudio.com"
-        or not url.path.startswith("/_apis/public/gallery/publishers/OpenAI/vsextensions/chatgpt/")
+        or not url.path.startswith(
+            "/_apis/public/gallery/publishers/OpenAI/vsextensions/chatgpt/"
+        )
     ):
         raise ValueError("Only the official Codex package source is accepted.")
-    request = urllib.request.Request(profile["url"], headers={"Accept-Encoding": "identity"})
+    request = urllib.request.Request(
+        profile["url"], headers={"Accept-Encoding": "identity"}
+    )
     checksum = hashlib.sha256()
     size = 0
-    # A7 fix: Clean up partial download on error
+    # A7 fix: Clean up partial download on error; don't delete pre-existing file
     try:
         # urllib on macOS respects the system proxy. TLS verification is never disabled.
         with urllib.request.urlopen(request, timeout=45) as response:
-            # A7 fix: Validate redirect hosts
+            # A7 fix: Validate redirect hosts including *.gallerycdn.vsassets.io
             redirect_url = urllib.parse.urlparse(response.url)
             if redirect_url.scheme != "https":
                 raise ValueError("Insecure package redirect refused.")
@@ -96,7 +103,11 @@ def download_official(profile, output):
                 "az764295.vo.msecnd.net",
                 "vscode.blob.core.windows.net",
             }
-            if redirect_url.hostname not in allowed_hosts:
+            # Allow *.gallerycdn.vsassets.io (real Microsoft CDN)
+            if redirect_url.hostname not in allowed_hosts and not (
+                redirect_url.hostname
+                and redirect_url.hostname.endswith(".gallerycdn.vsassets.io")
+            ):
                 raise ValueError(f"Redirect to untrusted host: {redirect_url.hostname}")
             encoded = (response.headers.get("Content-Encoding") or "").lower() in (
                 "gzip",
@@ -114,9 +125,10 @@ def download_official(profile, output):
             raise ValueError("Official package checksum mismatch.")
         return {"sha256": checksum.hexdigest(), "bytes": size}
     except Exception:
-        # A7 fix: Clean up partial download on any error
+        # A7 fix regression: Don't delete pre-existing file on EEXIST; only delete our partial write
         try:
-            Path(output).unlink(missing_ok=True)
+            if Path(output).exists() and Path(output).stat().st_size != size:
+                Path(output).unlink(missing_ok=True)
         except:
             pass
         raise
@@ -195,8 +207,8 @@ def prepare(vsix, destination, helper, profile):
                 target.chmod(0o755 if (member.external_attr >> 16) & 0o111 else 0o644)
         vendor = extracted / "openai.chatgpt"
         (destination / "unpacked/extension").rename(vendor)
-        # A8 fix: Use python3 -I to ignore user site-packages
-        command = ["python3", "-I", str(helper / "scripts/native_adapter.py")]
+        # A8 fix regression: -I breaks renderer_adapter import; use sys.executable instead
+        command = [sys.executable, str(helper / "scripts/native_adapter.py")]
         if profile.get("platform"):
             command += ["--platform", profile["platform"]]
         process = subprocess.run(
@@ -257,14 +269,20 @@ if __name__ == "__main__":
     elif args.download_profile:
         if not args.output:
             parser.error("--output is required for a download.")
-        print(json.dumps(download_official(json.loads(args.download_profile), args.output)))
+        print(
+            json.dumps(
+                download_official(json.loads(args.download_profile), args.output)
+            )
+        )
     elif args.verify_tree:
         if tree_digest(args.verify_tree) != args.expected_tree:
             raise ValueError("The staged package changed during testing.")
         print(json.dumps({"verified": True}))
     else:
         if not all([args.vsix, args.destination, args.helper, args.profile]):
-            parser.error("Package, destination, helper and approved profile are required.")
+            parser.error(
+                "Package, destination, helper and approved profile are required."
+            )
         print(
             json.dumps(
                 prepare(

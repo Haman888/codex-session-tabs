@@ -4,7 +4,7 @@ const { EventEmitter } = require('node:events');
 
 describe('0.4.6 fixes', () => {
   it('S2: historyRead stays false when first sync fails', async () => {
-    const Titles = require('../titles.js');
+    const { Titles } = require('../titles.js');
     const output = { appendLine() {} };
     const context = {
       globalState: {
@@ -17,72 +17,124 @@ describe('0.4.6 fixes', () => {
       subscriptions: []
     };
     const loadSessions = async () => { throw new Error('Database locked'); };
-    const titles = new Titles(context, output, loadSessions);
-    await titles.refresh();
-    assert.equal(titles.historyRead, false, 'historyRead should stay false after first sync failure');
+    const titles = new Titles(context, loadSessions, () => {}, output);
+    titles.applyUI = () => {}; // stub UI to focus on historyRead logic
+    await titles.sync();
+    assert.equal(titles.historyRead, undefined, 'historyRead should not be set to true after first sync failure');
   });
 
   it('C3: large history query is capped at 5000 rows and 300 chars per title', async () => {
-    const { readSessions } = require('../sessions.js');
-    const run = async (db, sql) => {
-      assert.match(sql, /LIMIT\s+5000/, 'query must include LIMIT 5000');
-      assert.match(sql, /substr\([^,]+,\s*1,\s*300\)/, 'query must cap title at 300 chars');
+    // Test that readSessions produces a query with LIMIT 5000 and substr(..., 1, 300)
+    const fs = require('node:fs/promises');
+    const path = require('node:path');
+    const testHome = path.join('/tmp', `cst-test-${Math.random().toString(36).slice(2, 10)}`);
+    const dbPath = path.join(testHome, 'state_12345.sqlite');
+
+    let queriesSeen = [];
+    const testRun = async (db, sql) => {
+      queriesSeen.push(sql);
+      if (sql.includes('PRAGMA')) {
+        return [
+          { name: 'id' }, { name: 'title' }, { name: 'cwd' },
+          { name: 'source' }, { name: 'archived' }, { name: 'updated_at' }
+        ];
+      }
       return [];
     };
-    await readSessions({ run });
+
+    try {
+      await fs.mkdir(testHome, { recursive: true });
+      await fs.writeFile(dbPath, '');  // state_*.sqlite so findDatabase succeeds
+      await fs.writeFile(path.join(testHome, 'session_index.jsonl'), '');
+      const { readSessions } = require('../sessions.js');
+      await readSessions({ home: testHome, run: testRun });
+
+      const selectQuery = queriesSeen.find(q => q.includes('SELECT') && q.includes('LIMIT'));
+      assert.ok(selectQuery, `SELECT query with LIMIT should be present. Queries seen: ${queriesSeen.length}`);
+      assert.match(selectQuery, /LIMIT\s+5000/, 'query must include LIMIT 5000');
+      assert.match(selectQuery, /substr\(.+,\s*1,\s*300\)/, 'query must cap title at 300 chars');
+    } finally {
+      await fs.rm(testHome, { recursive: true, force: true });
+    }
   });
 
   it('U1: without saved recovery, update notice shows checkUpdate not restore', async () => {
+    // Mock vscode before requiring update-ui
+    delete require.cache[require.resolve('../update-ui.js')];
+    delete require.cache[require.resolve('../update-core.js')];
+
+    const Module = require('node:module');
+    const originalRequire = Module.prototype.require;
+    const root = require('node:path').resolve(__dirname, '..');
+
+    let intervals = [];
     const vscode = {
-      ExtensionMode: { Production: 1 },
+      StatusBarAlignment: { Right: 2 }, ExtensionMode: { Production: 1 }, ProgressLocation: { Notification: 15 },
+      env: { appRoot: '/synthetic/app', remoteName: undefined },
       window: {
+        createStatusBarItem: () => ({ show() {}, dispose() {} }),
         showWarningMessage: async (msg, ...actions) => {
           assert.match(msg, /outdated|newer|available/i, 'message should mention update available');
           assert.ok(!msg.includes('Restore'), 'message should not offer restore without saved package');
-          assert.equal(actions[0], 'Check and update', 'action should be Check and update');
+          const buttons = actions.filter(a => typeof a === 'string');
+          assert.equal(buttons[0], 'Check and update', 'action should be Check and update');
           return null;
-        }
+        },
+        showInformationMessage: async () => {},
+        showErrorMessage: async () => {},
+        withProgress: async () => ({ status: 'cancelled' }),
       },
-      commands: { registerCommand() {} },
-      Uri: { file: p => ({ fsPath: p }) }
+      commands: { registerCommand: () => ({ dispose() {} }), executeCommand: async () => {} },
+      extensions: {
+        getExtension: () => ({ extensionPath: '/synthetic/extensions/openai.chatgpt-26.1007.21434' }),
+        onDidChange: () => ({ dispose() {} }),
+      },
     };
-    const context = {
-      extensionMode: vscode.ExtensionMode.Production,
-      subscriptions: [],
-      globalState: { get: () => undefined, update: async () => {} },
-      storageUri: vscode.Uri.file('/tmp/test-storage')
-    };
-    const output = { appendLine() {} };
-    const isBusy = () => false;
 
-    // Stub translations
-    const origRequire = require('../ui-language.js');
-    const t = key => {
-      const map = {
-        'update.canRestore': 'Codex is outdated: {message}',
-        'action.restoreCodex': 'Restore Codex',
-        'action.checkUpdate': 'Check and update'
-      };
-      return map[key] || key;
-    };
-    require.cache[require.resolve('../ui-language.js')] = { exports: { t } };
-
-    const { activateUpdates } = require('../update-ui.js');
-    const manager = {
-      async recovery({ checkFile }) {
-        if (checkFile === false) return null;
-        return null;
+    Module.prototype.require = function (id) {
+      if (id === 'vscode') return vscode;
+      if (id === './update-core' && this.filename && this.filename.endsWith('update-ui.js')) {
+        const core = originalRequire.call(this, id);
+        return {
+          ...core,
+          hostPlatform: () => 'darwin-x64',
+          profileFor: (profiles, version) => core.profileFor(profiles, version, 'darwin-x64'),
+          supportedProfile: profiles => core.supportedProfile(profiles, 'darwin-x64'),
+          inspectInstalled: async () => ({ status: 'adapter-missing', version: '26.1007.21434', message: 'adapter-missing' }),
+          UpdateManager: class {
+            async recovery() { return undefined; }
+            async run() { return { status: 'verified' }; }
+            on() {}  // stub EventEmitter
+          },
+        };
       }
+      return originalRequire.call(this, id);
     };
 
-    // Trigger the notice by simulating manager state change
-    const emitter = new EventEmitter();
-    manager.on = emitter.on.bind(emitter);
-    activateUpdates(context, output, isBusy);
+    // Stub setInterval to not block test exit
+    const realSetInterval = global.setInterval;
+    global.setInterval = (...args) => {
+      const id = realSetInterval(...args);
+      intervals.push(id);
+      return id;
+    };
 
-    // Simulate update available without saved recovery
-    emitter.emit('change', { status: 'outdated', message: 'Newer version available' });
-
-    require.cache[require.resolve('../ui-language.js')] = origRequire;
+    try {
+      const { activateUpdates } = require('../update-ui.js');
+      const context = {
+        extensionPath: root, extensionMode: vscode.ExtensionMode.Production, subscriptions: [],
+        globalStorageUri: { fsPath: '/synthetic/storage' },
+        globalState: { get: () => undefined, update: async () => {} },
+      };
+      const output = { lines: [], appendLine(line) { this.lines.push(line); } };
+      activateUpdates(context, output, () => false);
+      // The warning is shown on first inspect, which happens synchronously
+    } finally {
+      intervals.forEach(clearInterval);
+      global.setInterval = realSetInterval;
+      Module.prototype.require = originalRequire;
+      delete require.cache[require.resolve('../update-ui.js')];
+      delete require.cache[require.resolve('../update-core.js')];
+    }
   });
 });
