@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.3 — fork (Haman888/codex-session-tabs)
+
+- **U8:** Fixed stale lock race between two windows — now renames stale lock instead of unlinking to prevent simultaneous entry
+- **A5:** Documented 90s timeout limitation for Intel Mac profile in README
+
 ## 0.5.2 — fork (Haman888/codex-session-tabs)
 
 - **S3:** Fixed fs.watch debounce indefinite delay during active work — now uses throttling with 3s maxWait

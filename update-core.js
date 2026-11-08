@@ -127,7 +127,14 @@ class UpdateManager {
       if (!Number.isSafeInteger(previous.pid) || previous.pid < 1) throw new Error(t('update.lockUnverified'));
       try { process.kill(previous.pid, 0); throw new Error(t('update.alreadyRunning')); }
       catch (failure) { if (failure.code !== 'ESRCH') throw failure; }
-      await fs.unlink(file);
+      // U8 fix: Rename stale lock instead of unlinking to prevent race
+      const staleName = `${file}.stale.${Date.now()}.${randomUUID().slice(0, 8)}`;
+      try { await fs.rename(file, staleName); }
+      catch (renameError) {
+        // Another window may have already removed or renamed it
+        if (renameError.code !== 'ENOENT') throw renameError;
+      }
+      try { await fs.unlink(staleName); } catch { /* Cleanup is best-effort */ }
       handle = await fs.open(file, 'wx', 0o600);
     }
     await handle.writeFile(JSON.stringify({ pid: process.pid, nonce }));
