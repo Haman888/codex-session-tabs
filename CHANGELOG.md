@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.8 — fork (Haman888/codex-session-tabs)
+
+- **L5:** Fixed English word "Cancel" in Russian README → "Отмена"
+- **L6:** Added CHANGELOG.md to VSIX package files
+- **L8:** Fixed welcome message not showing before extension activation — added fallback to English
+- **L9:** Fixed command name mismatch in Russian welcome message — "Создать диалог" → "Новая вкладка"
+
 ## 0.4.7 — fork (Haman888/codex-session-tabs)
 
 - **U3:** Empty or malformed `operation.lock` no longer blocks update checks forever — handled gracefully with proper error

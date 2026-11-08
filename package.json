@@ -2,7 +2,7 @@
   "name": "codex-session-tabs",
   "displayName": "Codex Session Tabs (fork)",
   "description": "%package.description%",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "publisher": "kasiaalena",
   "license": "MIT",
   "repository": {
@@ -202,11 +202,11 @@
       {
         "view": "codexSessionTabs.sessions",
         "contents": "No Codex tabs are open.\n[New chat](command:codexSessionTabs.new)\n[Open from history](command:codexSessionTabs.history)",
-        "when": "codexSessionTabs.uiLanguage == en"
+        "when": "!codexSessionTabs.uiLanguage || codexSessionTabs.uiLanguage == en"
       },
       {
         "view": "codexSessionTabs.sessions",
-        "contents": "Нет открытых вкладок Codex.\n[Создать диалог](command:codexSessionTabs.new)\n[Открыть из истории](command:codexSessionTabs.history)",
+        "contents": "Нет открытых вкладок Codex.\n[Новая вкладка](command:codexSessionTabs.new)\n[Открыть из истории](command:codexSessionTabs.history)",
         "when": "codexSessionTabs.uiLanguage == ru"
       }
     ],
