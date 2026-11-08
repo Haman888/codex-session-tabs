@@ -297,7 +297,7 @@ function activate(context) {
     vscode.window.registerUriHandler({ handleUri: safe(async uri => {
       if (uri.path === '/sessions') return show();
       if (uri.path === '/history') return vscode.commands.executeCommand('codexSessionTabs.history.focus');
-      if (uri.path === '/new') return newSession();
+      // S4 fix: Remove /new to prevent external abuse
       const match = /^\/session\/([0-9a-f-]+)$/i.exec(uri.path);
       if (match) return openSession(match[1]);
     }) }),

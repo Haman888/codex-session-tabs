@@ -231,6 +231,7 @@ function activateUpdates(context, output, isBusy) {
       if (notice !== last.status && context.extensionMode === vscode.ExtensionMode.Production) {
         notice = last.status;
         if (!['ready', 'reload-required'].includes(last.status)) {
+          // U7 fix: Use checkFile:false to avoid reading VSIX here (already checked in background)
           const saved = await manager.recovery({ checkFile: false });
           vscode.window.showWarningMessage(saved ? t('update.canRestore', { message: last.message }) : last.message,
             saved ? t('action.restoreCodex') : t('action.checkUpdate'))

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1 — fork (Haman888/codex-session-tabs)
+
+- **U7:** Fixed restore warning reading VSIX three times — now uses `checkFile: false` to skip redundant check
+- **S4:** Removed `/new` from URI handler to prevent external abuse — use Command Palette instead
+
 ## 0.5.0 — fork (Haman888/codex-session-tabs)
 
 - **U4:** Fixed runChild leaving orphaned child processes after normal exit — now always cleans up process group with SIGTERM/SIGKILL
