@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.9 — fork (Haman888/codex-session-tabs)
+
+- **L3:** Added test coverage for draftTitles cap at 500 entries (already implemented in 0.4.5)
+- **L2:** Added test coverage for retired turns preventing duplicate events from old turns (already implemented in 0.4.2)
+
 ## 0.4.8 — fork (Haman888/codex-session-tabs)
 
 - **L5:** Fixed English word "Cancel" in Russian README → "Отмена"
