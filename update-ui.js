@@ -30,7 +30,11 @@ function runChild(command, args, { env, signal, timeout = 180000, resultReady } 
       // The disposable process group can include an app-server after the main
       // test window exits. Never leave those children behind after cancellation
       // or after a final report has ended the isolated test.
-      if (stopping) kill('SIGKILL');
+      // U4 fix: Always clean up process group, even on normal exit
+      if (process.platform !== 'win32') {
+        try { process.kill(-child.pid, 'SIGTERM'); } catch { /* ESRCH is fine */ }
+        setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* ESRCH is fine */ } }, 100);
+      }
       clearTimeout(timer); clearTimeout(forced); clearTimeout(polling); signal?.removeEventListener('abort', stop);
       if (signal?.aborted) reject(new Error(t('update.cancelled')));
       else if (failure) reject(new Error(failure));

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0 — fork (Haman888/codex-session-tabs)
+
+- **U4:** Fixed runChild leaving orphaned child processes after normal exit — now always cleans up process group with SIGTERM/SIGKILL
+
 ## 0.4.9 — fork (Haman888/codex-session-tabs)
 
 - **L3:** Added test coverage for draftTitles cap at 500 entries (already implemented in 0.4.5)
