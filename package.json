@@ -2,7 +2,7 @@
   "name": "codex-session-tabs",
   "displayName": "Codex Session Tabs (fork)",
   "description": "%package.description%",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "publisher": "kasiaalena",
   "license": "MIT",
   "repository": {
@@ -177,10 +177,10 @@
       }
     ],
     "viewsContainers": {
-      "secondarySidebar": [
+      "activitybar": [
         {
           "id": "codex-session-tabs",
-          "title": "Codex",
+          "title": "Codex Session Tabs",
           "icon": "resources/sessions.svg"
         }
       ]

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.3 — fork (Haman888/codex-session-tabs)
+
+- **UX:** Moved companion to Activity Bar — "Codex Session Tabs" now appears as an icon in the left Activity Bar instead of secondary sidebar only
+
 ## 0.6.2 — fork (Haman888/codex-session-tabs)
 
 - **A8 fix regression:** Removed `-I` flag from native_adapter invocation in update_package.py — it broke renderer_adapter import; now uses sys.executable
