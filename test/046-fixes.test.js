@@ -67,14 +67,15 @@ describe('0.4.6 fixes', () => {
     const originalRequire = Module.prototype.require;
     const root = require('node:path').resolve(__dirname, '..');
 
-    let intervals = [];
+    let intervals = [], warnings = 0;
     const vscode = {
       StatusBarAlignment: { Right: 2 }, ExtensionMode: { Production: 1 }, ProgressLocation: { Notification: 15 },
       env: { appRoot: '/synthetic/app', remoteName: undefined },
       window: {
         createStatusBarItem: () => ({ show() {}, dispose() {} }),
         showWarningMessage: async (msg, ...actions) => {
-          assert.match(msg, /outdated|newer|available/i, 'message should mention update available');
+          warnings++;
+          assert.equal(msg, 'adapter-missing');
           assert.ok(!msg.includes('Restore'), 'message should not offer restore without saved package');
           const buttons = actions.filter(a => typeof a === 'string');
           assert.equal(buttons[0], 'Check and update', 'action should be Check and update');
@@ -102,6 +103,7 @@ describe('0.4.6 fixes', () => {
           supportedProfile: profiles => core.supportedProfile(profiles, 'darwin-x64'),
           inspectInstalled: async () => ({ status: 'adapter-missing', version: '26.1007.21434', message: 'adapter-missing' }),
           UpdateManager: class {
+            async loadProfiles() {}
             async recovery() { return undefined; }
             async run() { return { status: 'verified' }; }
             on() {}  // stub EventEmitter
@@ -127,8 +129,9 @@ describe('0.4.6 fixes', () => {
         globalState: { get: () => undefined, update: async () => {} },
       };
       const output = { lines: [], appendLine(line) { this.lines.push(line); } };
-      activateUpdates(context, output, () => false);
-      // The warning is shown on first inspect, which happens synchronously
+      const api = activateUpdates(context, output, () => false);
+      await api.check();
+      assert.equal(warnings, 1);
     } finally {
       intervals.forEach(clearInterval);
       global.setInterval = realSetInterval;

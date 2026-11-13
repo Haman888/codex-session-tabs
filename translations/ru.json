@@ -106,5 +106,9 @@
   "command.rename": "Переименовать сессию",
   "command.refresh": "Обновить сессии",
   "command.scope": "Выбрать папку сессий",
-  "welcome": "Нет открытых вкладок Codex.\n[Создать диалог](command:codexSessionTabs.new)\n[Открыть из истории](command:codexSessionTabs.history)"
+  "welcome": "Нет открытых вкладок Codex.\n[Создать диалог](command:codexSessionTabs.new)\n[Открыть из истории](command:codexSessionTabs.history)",
+  "update.confirmLatestCheck": "Проверка скачает последнюю стабильную сборку Codex (около 400 МБ) и на несколько минут откроет отдельное тестовое окно VS Code. Установка будет предложена только после успешной проверки совместимости. Начать?",
+  "update.newRelease": "Доступен Codex {version}. Проверить совместимость с вкладками и обновить?",
+  "update.invalidProfile": "Распознанный профиль совместимости некорректен. Установка отменена.",
+  "update.profileLimit": "Локальная история совместимости заполнена. Установленные файлы не изменены."
 }

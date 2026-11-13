@@ -49,6 +49,30 @@ function newChatWaitMs(profile) {
   return Math.max(45000, (profile?.startupTimeoutMs ?? 0) + 15000);
 }
 
+const probeChecks = ['isolation', 'nativeTabs', 'titles', 'completion', 'acknowledgement', 'nativeNewChat', 'interface', 'language'];
+
+function validDiscoveredProfile(profile, platform = hostPlatform()) {
+  const keys = ['version', 'platform', 'discovery', 'nativeLayout', 'startupTimeoutMs', 'sourceSha256', 'patchedSourceSha256', 'vsixSha256', 'url'];
+  return profile && Object.keys(profile).length === keys.length && keys.every(key => Object.hasOwn(profile, key))
+    && /^[0-9]{1,8}\.[0-9]{1,8}\.[0-9]{1,8}$/.test(profile.version)
+    && ['darwin-x64', 'darwin-arm64'].includes(platform) && profile.platform === platform
+    && profile.discovery === 'structure-v1' && ['classic', 'shared-content-v1'].includes(profile.nativeLayout)
+    && profile.startupTimeoutMs === 90000
+    && ['sourceSha256', 'patchedSourceSha256', 'vsixSha256'].every(key => /^[a-f0-9]{64}$/.test(profile[key]))
+    && profile.url === `https://marketplace.visualstudio.com/_apis/public/gallery/publishers/OpenAI/vsextensions/chatgpt/${profile.version}/vspackage?targetPlatform=${platform}`;
+}
+
+function profileHash(profile) {
+  return createHash('sha256').update(JSON.stringify(Object.fromEntries(Object.entries(profile).sort(([a], [b]) => a.localeCompare(b))))).digest('hex');
+}
+
+function completeProof(evidence, version, build, profile) {
+  return evidence?.success === true && evidence.finished === true && evidence.version === version
+    && evidence.helper === build && typeof evidence.attempt === 'string' && evidence.attempt.length > 0
+    && evidence.profileSha256 === profileHash(profile)
+    && probeChecks.every(key => evidence.checks?.[key] === true);
+}
+
 async function inspectInstalled(folder, profiles, helper) {
   if (!folder) return { status: 'missing', message: t('health.missing') };
   let pkg;
@@ -106,10 +130,35 @@ async function downloadOfficial(profile, file, signal, fetcher = fetch) {
 }
 
 class UpdateManager {
-  constructor({ storage, helper, profiles, prepare, verifyCandidate, probe, install, download = downloadOfficial, confirmInstall, isBusy = () => false }) {
+  constructor({ storage, helper, profiles, prepare, verifyCandidate, probe, install, discover, download = downloadOfficial, confirmInstall, isBusy = () => false }) {
     if (typeof verifyCandidate !== 'function') throw new Error(t('update.verifierRequired'));
-    Object.assign(this, { storage, helper, profiles, prepare, verifyCandidate, probe, install, download, confirmInstall, isBusy });
+    Object.assign(this, { storage, helper, profiles, prepare, verifyCandidate, probe, install, discover, download, confirmInstall, isBusy });
+    this.bundledProfiles = profiles.slice();
     this.receiptPath = path.join(storage, 'recovery.json');
+    this.profilesPath = path.join(storage, 'compatibility.local.json');
+  }
+  async profileRecords() {
+    try {
+      const stat = await fs.lstat(this.profilesPath);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) return [];
+      const records = JSON.parse(await fs.readFile(this.profilesPath, 'utf8'));
+      if (!Array.isArray(records) || records.length > 128) return [];
+      const build = await helperHash(this.helper);
+      return records.filter(record => validDiscoveredProfile(record?.profile)
+        && completeProof(record.evidence, record.profile.version, build, record.profile)
+        && !profileFor(this.bundledProfiles, record.profile.version));
+    } catch { return []; }
+  }
+  async loadProfiles() {
+    const records = await this.profileRecords();
+    this.profiles.splice(0, this.profiles.length, ...this.bundledProfiles, ...records.map(record => record.profile));
+  }
+  async rememberProfile(profile, evidence) {
+    const records = (await this.profileRecords()).filter(record => record.profile.version !== profile.version);
+    if (records.length >= 128) throw new Error(t('update.profileLimit'));
+    records.push({ profile, evidence });
+    await atomicJson(this.profilesPath, records);
+    await this.loadProfiles();
   }
   async locked(action) {
     await fs.mkdir(this.storage, { recursive: true, mode: 0o700 });
@@ -169,26 +218,33 @@ class UpdateManager {
   async run(version, signal) {
     return this.locked(async () => {
       if (this.isBusy()) throw new Error(t('update.waitForReplies'));
-      const profile = profileFor(this.profiles, version);
-      if (!profile) throw new Error(t('update.unsupported', { version }));
+      await this.loadProfiles();
+      let profile = profileFor(this.profiles, version);
+      if (!profile && !this.discover) throw new Error(t('update.unsupported', { version }));
       const build = await helperHash(this.helper);
       const job = await fs.mkdtemp(path.join(this.storage, 'job-'));
       try {
       const original = path.join(job, 'official.vsix');
-      await this.download(profile, original, signal);
+      if (profile) await this.download(profile, original, signal);
+      else {
+        profile = await this.discover(version, original, signal);
+        if (!validDiscoveredProfile(profile) || profile.version !== version) throw new Error(t('update.invalidProfile'));
+      }
       signal?.throwIfAborted();
       // Verify again independently of the downloader and before extraction/execution.
       if (await hashFile(original) !== profile.vsixSha256) throw new Error(t('update.originalChecksum'));
       const candidate = await this.prepare(original, job, profile, signal);
+      candidate.profile = profile;
       const candidateHash = await hashFile(candidate.vsix);
       await this.verifyCandidate(candidate, signal);
       const attempt = randomUUID();
-      const evidence = await this.probe(candidate, job, { attempt, helper: build }, signal);
-      const required = ['isolation', 'nativeTabs', 'titles', 'completion', 'acknowledgement', 'nativeNewChat', 'interface', 'language'];
+      const evidence = await this.probe(candidate, job, { attempt, helper: build, profileSha256: profileHash(profile) }, signal);
+      const required = probeChecks;
       if (evidence.attempt !== attempt || evidence.helper !== build || evidence.success !== true
         || evidence.version !== version || !required.every(key => evidence.checks?.[key] === true)) {
         throw new Error(t('update.probeFailed'));
       }
+      if (profile.discovery && !completeProof(evidence, version, build, profile)) throw new Error(t('update.probeFailed'));
       if (await hashFile(candidate.vsix) !== candidateHash || await helperHash(this.helper) !== build) {
         throw new Error(t('update.filesChanged'));
       }
@@ -202,6 +258,7 @@ class UpdateManager {
       // Save a proved recovery before touching the installed version. Never discard
       // an existing known-good recovery when admitting a newer candidate.
       const previous = await this.recovery();
+      if (profile.discovery) await this.rememberProfile(profile, evidence);
       if (!previous) await atomicJson(this.receiptPath, receipt);
       // U6 fix regression: Clean up old cached VSIX files, but keep the receipt's file
       try {
@@ -231,6 +288,7 @@ class UpdateManager {
   }
   async restore() {
     return this.locked(async () => {
+      await this.loadProfiles();
       if (this.isBusy()) throw new Error(t('update.waitForReplies'));
       const saved = await this.recovery();
       if (!saved) throw new Error(t('update.noRecovery'));
@@ -242,4 +300,4 @@ class UpdateManager {
   }
 }
 
-module.exports = { hashFile, atomicJson, helperHash, hostPlatform, profileFor, supportedProfile, newChatWaitMs, inspectInstalled, downloadOfficial, UpdateManager };
+module.exports = { hashFile, atomicJson, helperHash, hostPlatform, profileFor, supportedProfile, newChatWaitMs, validDiscoveredProfile, inspectInstalled, downloadOfficial, UpdateManager };

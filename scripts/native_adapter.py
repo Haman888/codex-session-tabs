@@ -105,6 +105,7 @@ def run():
     mode.add_argument("--restore", action="store_true")
     mode.add_argument("--check", action="store_true")
     parser.add_argument("--platform")
+    parser.add_argument("--profile", type=Path)
     args = parser.parse_args()
     extension = args.extension_dir.resolve()
     package = json.loads(inside(extension, "package.json").read_text())
@@ -119,7 +120,8 @@ def run():
         read_optional(backup),
         read_optional(manifest),
     )
-    profile = profile_for(ROOT, package.get("version"), args.platform, (saved, current))
+    external = json.loads(args.profile.read_text()) if args.profile else None
+    profile = profile_for(ROOT, package.get("version"), args.platform, (saved, current), external)
     if current is None:
         raise ValueError("The native editor is missing.")
     state = json.loads(state_bytes) if state_bytes is not None else None

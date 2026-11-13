@@ -1,0 +1,31 @@
+{
+  "started": "2026-11-13T07:49:03.657Z",
+  "success": true,
+  "finished": true,
+  "version": "26.1111.21308",
+  "phase": "download-and-probe",
+  "gui": {
+    "attempt": "73621648-030c-4304-b044-74b86b62d659",
+    "helper": "b8e0063f54fb9bc1cc437e07740dfffb9f176c453b4395ff2126d1cb5eb294b7",
+    "profileSha256": "291b62e65fec640711dc37793b63093f6fabb1726f6a95259d6fe76e5bce186f",
+    "success": true,
+    "finished": true,
+    "phase": "titles-and-indicators",
+    "checks": {
+      "isolation": true,
+      "nativeNewChat": true,
+      "interface": true,
+      "language": true,
+      "nativeTabs": true,
+      "titles": true,
+      "completion": true,
+      "acknowledgement": true
+    },
+    "version": "26.1111.21308",
+    "acknowledgementMode": "explicit-acknowledgement-in-background-test",
+    "elapsedMs": 61762
+  },
+  "learnedAfterRestart": true,
+  "recoveryVerified": true,
+  "ended": "2026-11-13T07:56:36.684Z"
+}

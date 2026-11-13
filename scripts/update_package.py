@@ -6,11 +6,13 @@ import hashlib
 import io
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path, PurePosixPath
 
@@ -73,7 +75,34 @@ def latest_stable(target):
     return {"latest": versions[0]["version"]}
 
 
-def download_official(profile, output):
+def official_redirect(url):
+    parsed = urllib.parse.urlparse(url)
+    allowed = {
+        "marketplace.visualstudio.com",
+        "vscode.download.prss.microsoft.com",
+        "az764295.vo.msecnd.net",
+        "vscode.blob.core.windows.net",
+    }
+    if (
+        parsed.scheme != "https"
+        or parsed.username
+        or parsed.password
+        or parsed.port not in (None, 443)
+        or not (
+            parsed.hostname in allowed
+            or (parsed.hostname or "").endswith(".gallerycdn.vsassets.io")
+        )
+    ):
+        raise ValueError("Untrusted package redirect refused.")
+
+
+class OfficialRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        official_redirect(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def download_official(profile, output, *, discover=False):
     url = urllib.parse.urlparse(profile["url"])
     if (
         url.scheme != "https"
@@ -87,7 +116,12 @@ def download_official(profile, output):
     created = None
     try:
         # urllib on macOS respects the system proxy. TLS verification is never disabled.
-        with urllib.request.urlopen(request, timeout=45) as response:
+        opener = (
+            urllib.request.build_opener(OfficialRedirectHandler()).open
+            if discover
+            else urllib.request.urlopen
+        )
+        with opener(request, timeout=45) as response:
             # A7 fix: Validate redirect hosts including *.gallerycdn.vsassets.io
             redirect_url = urllib.parse.urlparse(response.url)
             if redirect_url.scheme != "https":
@@ -117,7 +151,7 @@ def download_official(profile, output):
                         raise ValueError("Package download is too large.")
                     checksum.update(data)
                     file.write(data)
-        if checksum.hexdigest() != profile["vsixSha256"]:
+        if not discover and checksum.hexdigest() != profile["vsixSha256"]:
             raise ValueError("Official package checksum mismatch.")
         return {"sha256": checksum.hexdigest(), "bytes": size}
     except Exception:
@@ -156,6 +190,110 @@ def tree_digest(folder):
     return hashlib.sha256(json.dumps(records).encode()).hexdigest()
 
 
+def validate_archive(archive):
+    names = set()
+    total = 0
+    for member in archive.infolist():
+        name = PurePosixPath(member.filename)
+        normalized = name.as_posix()
+        if (
+            normalized in names
+            or name.is_absolute()
+            or ".." in name.parts
+            or "\\" in member.filename
+            or ":" in member.filename
+            or stat.S_ISLNK(member.external_attr >> 16)
+        ):
+            raise ValueError("Unsafe or duplicate archive member.")
+        names.add(normalized)
+        total += member.file_size
+    if len(names) > 50000 or total > 2 * 1024**3:
+        raise ValueError("Package exceeds extraction limits.")
+
+
+def discover_profile(vsix, version, target):
+    if target not in ("darwin-x64", "darwin-arm64") or not re.fullmatch(
+        r"[0-9]{1,8}\.[0-9]{1,8}\.[0-9]{1,8}", version
+    ):
+        raise ValueError("Unsupported discovery target or version.")
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from native_adapter import patch_native
+
+    with zipfile.ZipFile(vsix) as archive:
+        validate_archive(archive)
+        for name, limit in [
+            ("extension/package.json", 1024 * 1024),
+            ("extension.vsixmanifest", 1024 * 1024),
+            ("extension/out/extension.js", 64 * 1024 * 1024),
+        ]:
+            if archive.getinfo(name).file_size > limit:
+                raise ValueError("Discovery metadata exceeds limits.")
+        package = json.loads(archive.read("extension/package.json"))
+        manifest = archive.read("extension.vsixmanifest").decode("utf-8-sig")
+        if "\x00" in manifest or re.search(r"<!\s*(?:DOCTYPE|ENTITY)\b", manifest, re.IGNORECASE):
+            raise ValueError("Manifest declarations are not allowed.")
+        identity = ET.fromstring(manifest)
+        identities = [node for node in identity.iter() if node.tag.split("}")[-1] == "Identity"]
+        if (
+            len(identities) != 1
+            or identities[0].get("TargetPlatform") != target
+            or identities[0].get("Version") != version
+            or identities[0].get("Publisher", "").lower() != "openai"
+            or identities[0].get("Id", "").lower() not in ("chatgpt", "openai.chatgpt")
+            or package.get("publisher", "").lower() != "openai"
+            or package.get("name") != "chatgpt"
+            or package.get("version") != version
+            or package.get("main") not in ("./out/extension.js", "out/extension.js")
+            or not any(
+                editor.get("viewType") == "chatgpt.conversationEditor"
+                for editor in package.get("contributes", {}).get("customEditors", [])
+            )
+        ):
+            raise ValueError("Official package identity or editor changed.")
+        source = archive.read("extension/out/extension.js")
+        if b"session-tabs-native.cjs" in source:
+            raise ValueError("Discovery requires an unmodified official package.")
+        matches = []
+        for layout in ("classic", "shared-content-v1"):
+            try:
+                patched = patch_native(source, {"nativeLayout": layout, "startupTimeoutMs": 90000})
+                matches.append((layout, patched))
+            except ValueError:
+                pass
+        if len(matches) != 1:
+            raise ValueError(
+                "This Codex structure needs a new adapter; installed files were not changed."
+            )
+    layout, patched = matches[0]
+    return {
+        "version": version,
+        "platform": target,
+        "discovery": "structure-v1",
+        "nativeLayout": layout,
+        "startupTimeoutMs": 90000,
+        "url": f"https://marketplace.visualstudio.com/_apis/public/gallery/publishers/OpenAI/vsextensions/chatgpt/{version}/vspackage?targetPlatform={target}",
+        "sourceSha256": hashlib.sha256(source).hexdigest(),
+        "patchedSourceSha256": hashlib.sha256(patched).hexdigest(),
+        "vsixSha256": digest(vsix),
+    }
+
+
+def discover_latest(target, output, expected_version):
+    release = latest_stable(target)
+    if release["latest"] != expected_version:
+        raise ValueError("The latest stable release changed; run the check again.")
+    if target not in ("darwin-x64", "darwin-arm64") or not re.fullmatch(
+        r"[0-9]{1,8}\.[0-9]{1,8}\.[0-9]{1,8}", expected_version
+    ):
+        raise ValueError("Unsupported discovery target or version.")
+    url = f"https://marketplace.visualstudio.com/_apis/public/gallery/publishers/OpenAI/vsextensions/chatgpt/{expected_version}/vspackage?targetPlatform={target}"
+    downloaded = download_official({"url": url}, output, discover=True)
+    profile = discover_profile(output, expected_version, target)
+    if profile["vsixSha256"] != downloaded["sha256"]:
+        raise ValueError("Official package changed after download.")
+    return profile
+
+
 def prepare(vsix, destination, helper, profile):
     vsix, destination, helper = map(Path, (vsix, destination, helper))
     if digest(vsix) != profile["vsixSha256"]:
@@ -163,24 +301,7 @@ def prepare(vsix, destination, helper, profile):
     if destination.exists():
         raise ValueError("Preparation requires a new isolated directory.")
     with zipfile.ZipFile(vsix) as archive:
-        names = set()
-        total = 0
-        for member in archive.infolist():
-            name = PurePosixPath(member.filename)
-            normalized = name.as_posix()
-            if (
-                normalized in names
-                or name.is_absolute()
-                or ".." in name.parts
-                or "\\" in member.filename
-                or ":" in member.filename
-                or stat.S_ISLNK(member.external_attr >> 16)
-            ):
-                raise ValueError("Unsafe or duplicate archive member.")
-            names.add(normalized)
-            total += member.file_size
-        if len(names) > 50000 or total > 2 * 1024**3:
-            raise ValueError("Package exceeds extraction limits.")
+        validate_archive(archive)
         package = json.loads(archive.read("extension/package.json"))
         if (
             package.get("publisher", "").lower() != "openai"
@@ -208,6 +329,10 @@ def prepare(vsix, destination, helper, profile):
         command = [sys.executable, str(helper / "scripts/native_adapter.py")]
         if profile.get("platform"):
             command += ["--platform", profile["platform"]]
+        if profile.get("discovery"):
+            policy = destination / "discovered-profile.json"
+            policy.write_text(json.dumps(profile))
+            command += ["--profile", str(policy)]
         process = subprocess.run(
             command + ["--extension-dir", str(vendor)],
             capture_output=True,
@@ -257,9 +382,14 @@ if __name__ == "__main__":
     parser.add_argument("--latest", action="store_true")
     parser.add_argument("--platform")
     parser.add_argument("--download-profile")
+    parser.add_argument("--discover-latest")
     parser.add_argument("--output")
     args = parser.parse_args()
-    if args.latest:
+    if args.discover_latest:
+        if not args.platform or not args.output:
+            parser.error("--platform and --output are required for discovery.")
+        print(json.dumps(discover_latest(args.platform, args.output, args.discover_latest)))
+    elif args.latest:
         if not args.platform:
             parser.error("--platform is required with --latest.")
         print(json.dumps(latest_stable(args.platform)))

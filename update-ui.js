@@ -7,7 +7,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
-const { UpdateManager, inspectInstalled, helperHash, hostPlatform, profileFor, supportedProfile, newChatWaitMs } = require('./update-core');
+const { UpdateManager, inspectInstalled, helperHash, hostPlatform, profileFor, supportedProfile, newChatWaitMs, validDiscoveredProfile } = require('./update-core');
 
 function runChild(command, args, { env, signal, timeout = 180000, resultReady } = {}) {
   return new Promise((resolve, reject) => {
@@ -65,14 +65,22 @@ async function latestStable(profiles, helper, signal) {
 }
 
 function activateUpdates(context, output, isBusy) {
-  const profiles = require('./compatibility.json');
+  const profiles = [...require('./compatibility.json')];
   const helper = context.extensionPath;
   const storage = path.join(context.globalStorageUri.fsPath, 'updates');
   const testMode = context.extensionMode === vscode.ExtensionMode.Test;
+  if (testMode && process.env.CODEX_TABS_PROBE_PROFILE) {
+    const profile = JSON.parse(process.env.CODEX_TABS_PROBE_PROFILE);
+    if (!validDiscoveredProfile(profile)) throw new Error(t('update.invalidProfile'));
+    if (!profileFor(profiles, profile.version)) profiles.push(profile);
+  }
   let disposed = false, checking, last, notice, pendingReload;
   const bar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 30);
   bar.command = 'codexSessionTabs.updateStatus';
   const manager = new UpdateManager({ storage, helper, profiles, isBusy,
+    discover: async (version, file, signal) => JSON.parse(await runChild('python3', ['-I',
+      path.join(helper, 'scripts/update_package.py'), '--discover-latest', version,
+      '--platform', hostPlatform(), '--output', file], { signal, timeout: 600000 })),
     download: async (profile, file, signal) => {
       await runChild('python3', ['-I', path.join(helper, 'scripts/update_package.py'),
         '--download-profile', JSON.stringify(profile), '--output', file], { signal, timeout: 600000 });
@@ -109,6 +117,7 @@ function activateUpdates(context, output, isBusy) {
         CODEX_TABS_PROBE_REPORT: reportFile, CODEX_TABS_PROBE_VENDOR: candidate.vendor,
         CODEX_TABS_PROBE_USER_DATA: userData, CODEX_TABS_PROBE_HELPER: helper,
         CODEX_TABS_PROBE_EVIDENCE: JSON.stringify(evidence) });
+      if (candidate.profile?.discovery) env.CODEX_TABS_PROBE_PROFILE = JSON.stringify(candidate.profile);
       const macos = path.resolve(vscode.env.appRoot, '../../MacOS');
       const names = await fs.readdir(macos);
       const binary = names.find(name => name === 'Code') || names.find(name => name === 'Electron');
@@ -123,7 +132,7 @@ function activateUpdates(context, output, isBusy) {
           '--disable-renderer-backgrounding', '--disable-background-timer-throttling',
           '--disable-backgrounding-occluded-windows'], { env, signal,
           // Two renderer starts at most, each as long as the profile lets Codex start.
-          timeout: 20000 + 2 * newChatWaitMs(profileFor(profiles, candidate.version)),
+          timeout: 20000 + 2 * newChatWaitMs(candidate.profile || profileFor(profiles, candidate.version)),
           resultReady: async () => {
             const report = JSON.parse(await fs.readFile(reportFile, 'utf8'));
             // This only ends the disposable process. UpdateManager independently
@@ -182,7 +191,7 @@ function activateUpdates(context, output, isBusy) {
     }
     if (!restoring && !testMode) {
       const action = t('action.startCheck');
-      const answer = await vscode.window.showWarningMessage(t('update.confirmCheck', { version: supported.version }),
+      const answer = await vscode.window.showWarningMessage(t('update.confirmLatestCheck'),
         { modal: true }, action);
       if (answer !== action) return { status: 'cancelled' };
     }
@@ -192,14 +201,13 @@ function activateUpdates(context, output, isBusy) {
       const abort = new AbortController();
       const cancel = token.onCancellationRequested(() => abort.abort());
       try {
+        let version = supported.version;
         if (!restoring) {
           const release = testMode && process.env.CODEX_TABS_LAB_OFFICIAL
             ? { latest: supported.version } : await latestStable(profiles, helper, abort.signal);
-          if (!profileFor(profiles, release.latest)) {
-            vscode.window.showInformationMessage(t('update.latestUnsupported', { version: release.latest })).then(undefined, () => {});
-          }
+          version = release.latest;
         }
-        const result = restoring ? await manager.restore() : await manager.run(supported.version, abort.signal);
+        const result = restoring ? await manager.restore() : await manager.run(version, abort.signal);
         await check();
         if (['installed', 'restored'].includes(result.status)) {
           await context.globalState.update('managedCodexVersion', result.version);
@@ -218,6 +226,7 @@ function activateUpdates(context, output, isBusy) {
   async function check() {
     if (checking) return checking;
     checking = (async () => {
+      await manager.loadProfiles();
       const vendor = vscode.extensions.getExtension('openai.chatgpt');
       if (vendor && context.globalState.get('codexExtensionsRoot') !== path.dirname(vendor.extensionPath)) {
         await context.globalState.update('codexExtensionsRoot', path.dirname(vendor.extensionPath));
@@ -264,7 +273,29 @@ function activateUpdates(context, output, isBusy) {
     }),
     vscode.extensions.onDidChange(() => check().catch(error => output.appendLine(error.message))),
   );
-  const timer = setInterval(() => check().catch(error => output.appendLine(error.message)), 60000);
+  const started = Date.now();
+  let releaseChecking = false;
+  async function checkRelease() {
+    if (testMode || context.extensionMode !== vscode.ExtensionMode.Production || disposed || releaseChecking
+      || process.platform !== 'darwin' || vscode.env.remoteName || isBusy() || pendingReload
+      || last?.status !== 'ready' || Date.now() - started < 300000
+      || Date.now() < context.globalState.get('nextReleaseCheck', 0)) return;
+    releaseChecking = true;
+    try {
+      await context.globalState.update('nextReleaseCheck', Date.now() + 86400000);
+      const release = await latestStable(profiles, helper);
+      const newer = (a, b) => a.localeCompare(b, 'en', { numeric: true }) > 0;
+      if (!disposed && /^[0-9]{1,8}\.[0-9]{1,8}\.[0-9]{1,8}$/.test(release.latest)
+        && newer(release.latest, last.version) && context.globalState.get('notifiedRelease') !== release.latest) {
+        await context.globalState.update('notifiedRelease', release.latest);
+        const label = t('action.checkUpdate');
+        const action = await vscode.window.showInformationMessage(t('update.newRelease', { version: release.latest }), label);
+        if (action === label && !disposed) await safe(() => run(false))();
+      }
+    } catch (error) { output.appendLine(t('log.update', { message: errorText(error) })); }
+    finally { releaseChecking = false; }
+  }
+  const timer = setInterval(() => check().then(checkRelease).catch(error => output.appendLine(error.message)), 60000);
   context.subscriptions.push({ dispose: () => { disposed = true; clearInterval(timer); } });
   check().catch(error => output.appendLine(error.message));
   return { manager, check, get status() { return last; } };

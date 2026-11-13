@@ -12,9 +12,10 @@ const core = require('../update-core');
 const root = path.resolve(__dirname, '..');
 const disposable = () => ({ dispose() {} });
 
-function updatesHost({ answer, status = 'ready', recovery } = {}) {
+function updatesHost({ answer, status = 'ready', recovery, driveProgress = false, env = {} } = {}) {
   setLanguage('en');
-  const seen = { info: [], warnings: [], errors: [], progress: 0, runs: [], restores: 0 };
+  const seen = { info: [], warnings: [], errors: [], progress: 0, runs: [], restores: 0, metadata: 0 };
+  const clock = { value: 1000000 }, timers = [];
   const commands = new Map();
   const vscode = {
     StatusBarAlignment: { Right: 2 }, ProgressLocation: { Notification: 15 },
@@ -29,7 +30,10 @@ function updatesHost({ answer, status = 'ready', recovery } = {}) {
         return answer === 'accept' ? items[0] : undefined;
       },
       showErrorMessage: async (...args) => { seen.errors.push(args); },
-      withProgress: async () => { seen.progress++; return { status: 'progress' }; },
+      withProgress: async (_options, action) => {
+        seen.progress++;
+        return driveProgress ? action({}, { onCancellationRequested: disposable }) : { status: 'progress' };
+      },
     },
     commands: { registerCommand: (name, fn) => { commands.set(name, fn); return disposable(); } },
     extensions: {
@@ -44,6 +48,7 @@ function updatesHost({ answer, status = 'ready', recovery } = {}) {
     supportedProfile: profiles => core.supportedProfile(profiles, 'darwin-x64'),
     inspectInstalled: async () => ({ status, version: '26.1007.21434', message: status }),
     UpdateManager: class {
+      async loadProfiles() {}
       async recovery() { return recovery; }
       async run(version) { seen.runs.push(version); return { status: 'verified', version }; }
       async restore() { seen.restores++; return { status: 'cancelled' }; }
@@ -52,10 +57,19 @@ function updatesHost({ answer, status = 'ready', recovery } = {}) {
   const file = path.join(root, 'update-ui.js');
   const nativeRequire = createRequire(file);
   const module = { exports: {} };
+  const childProcess = { spawn: () => {
+    const { EventEmitter } = require('node:events');
+    const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter(); child.kill = () => {};
+    seen.metadata++;
+    setTimeout(() => { child.stdout.emit('data', JSON.stringify({ latest: '99.1.2' })); child.emit('exit', 0); }, 0);
+    return child;
+  } };
   vm.runInNewContext(fs.readFileSync(file, 'utf8'), {
-    module, Buffer, setTimeout, clearTimeout, setInterval: () => 0, clearInterval() {},
-    process: { platform: 'darwin', arch: 'x64', env: {} },
-    require: name => name === 'vscode' ? vscode : name === './update-core' ? stub : nativeRequire(name),
+    module, Buffer, AbortController, Date: { now: () => clock.value }, setTimeout, clearTimeout,
+    setInterval: callback => { timers.push(callback); return 0; }, clearInterval() {},
+    process: { platform: 'darwin', arch: 'x64', env },
+    require: name => name === 'vscode' ? vscode : name === './update-core' ? stub
+      : name === 'node:child_process' ? childProcess : nativeRequire(name),
   });
   const saved = new Map();
   const context = {
@@ -65,7 +79,7 @@ function updatesHost({ answer, status = 'ready', recovery } = {}) {
   };
   const output = { lines: [], appendLine(line) { this.lines.push(line); } };
   const api = module.exports.activateUpdates(context, output, () => false);
-  return { api, seen, commands, output };
+  return { api, seen, commands, output, clock, timers };
 }
 
 function extensionHost({ codex = true, health = 'ready' } = {}) {
@@ -151,7 +165,7 @@ test('the protection check asks first and does nothing when the dialog is closed
   assert.equal((await declined.commands.get('codexSessionTabs.checkUpdate')()).status, 'cancelled');
   assert.equal(declined.seen.warnings.length, 1);
   const [{ message, rest }] = declined.seen.warnings;
-  assert.match(message, /26\.1111\.21308/);
+  assert.match(message, /latest stable/);
   assert.match(message, /400 MB/);
   assert.equal(rest[0].modal, true);
   assert.equal(declined.seen.progress, 0);
@@ -163,6 +177,31 @@ test('the protection check asks first and does nothing when the dialog is closed
   await accepted.commands.get('codexSessionTabs.restoreCodex')();
   assert.equal(accepted.seen.warnings.length, 1, 'Restoring a saved package needs no download confirmation');
   assert.equal(accepted.seen.progress, 2);
+});
+
+test('the update command checks the latest release even when no bundled profile names it', async () => {
+  const f = updatesHost({ answer: 'accept', driveProgress: true });
+  const result = await f.commands.get('codexSessionTabs.checkUpdate')();
+  assert.equal(result.status, 'verified');
+  assert.equal(result.version, '99.1.2');
+  assert.deepEqual(f.seen.runs, ['99.1.2']);
+  assert.equal(f.seen.metadata, 1);
+  assert.deepEqual(f.seen.errors, []);
+});
+
+test('a daily release notice downloads only metadata and never starts a GUI check by itself', async () => {
+  const f = updatesHost({ env: { CODEX_TABS_PROBE_PROFILE: 'not a trusted production profile' } });
+  await f.api.check();
+  await f.timers[0]();
+  assert.equal(f.seen.metadata, 0, 'Startup stays quiet');
+  f.clock.value += 300001;
+  await f.timers[0]();
+  assert.equal(f.seen.metadata, 1);
+  assert.match(f.seen.info.at(-1)[0], /99\.1\.2/);
+  await f.timers[0]();
+  assert.equal(f.seen.metadata, 1, 'Metadata is throttled for 24 hours');
+  assert.equal(f.seen.progress, 0);
+  assert.deepEqual(f.seen.runs, []);
 });
 
 test('the status button offers actions only when something can be done', async () => {

@@ -1,0 +1,20 @@
+{
+  "attempt": "forward-installed-2026-11-13",
+  "helper": "52560f6c84f6ad4e9fb6f9af343ce177b06f83ef1ee9aead04ddfde84ef971a3",
+  "success": true,
+  "finished": true,
+  "phase": "titles-and-indicators",
+  "checks": {
+    "isolation": true,
+    "nativeNewChat": true,
+    "interface": true,
+    "language": true,
+    "nativeTabs": true,
+    "titles": true,
+    "completion": true,
+    "acknowledgement": true
+  },
+  "version": "26.1111.21308",
+  "acknowledgementMode": "explicit-acknowledgement-in-background-test",
+  "elapsedMs": 50672
+}

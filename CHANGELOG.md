@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0 — fork (Haman888/codex-session-tabs)
+
+- Check the actual latest stable Codex release instead of always installing the last bundled profile.
+- Discover compatible future editor layouts from the official HTTPS package, pin their hashes and require the full isolated GUI probe before admitting a local profile. Keep the previous verified recovery; failed candidates never reach installation.
+- Persist successful profiles with the helper-build and profile fingerprints, and reload them after restart. Bundled profiles cannot be replaced by discovery.
+- Check release metadata at most daily after startup and offer available updates. Package downloads, GUI checks and installation remain explicit actions.
+- Validate each discovery download redirect, package identity, architecture, archive paths and XML manifest. Reject DTD/entity declarations and non-UTF-8 manifests before parsing.
+- Add unknown-version, persistence, tampering, redirect, manifest and command-routing tests plus a real forward-compatibility integration entrypoint.
+
 ## 0.6.5 — fork (Haman888/codex-session-tabs)
 
 - Add an exact-checksum Intel Mac profile for official Codex **26.1111.21308**, the latest stable Marketplace version checked on 2026-11-13. Retain the older Intel recovery and upstream Apple silicon profiles.

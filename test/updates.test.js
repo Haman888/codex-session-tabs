@@ -95,6 +95,48 @@ test('unknown version and tampered download never reach candidate execution', as
   assert.equal(f.installs.length, 0);
 });
 
+test('a discovered version is admitted only after its GUI proof and survives a restart', async t => {
+  const f = await fixture(t);
+  await f.manager.run('1.0.0');
+  const recovery = await fs.readFile(f.manager.receiptPath);
+  const future = { version: '99.1.2', platform: `${process.platform}-${process.arch}`,
+    discovery: 'structure-v1', nativeLayout: 'shared-content-v1', startupTimeoutMs: 90000,
+    sourceSha256: sha('source'), patchedSourceSha256: sha('patched'), vsixSha256: sha('future official'),
+    url: `https://marketplace.visualstudio.com/_apis/public/gallery/publishers/OpenAI/vsextensions/chatgpt/99.1.2/vspackage?targetPlatform=${process.platform}-${process.arch}` };
+  f.manager.discover = async (version, file) => {
+    assert.equal(version, '99.1.2');
+    await fs.writeFile(file, 'future official');
+    return future;
+  };
+  f.manager.probe = async (_candidate, _job, evidence) => ({ ...evidence,
+    version: '99.1.2', success: true, finished: true, checks: Object.fromEntries(required.map(key => [key, true])) });
+  const good = f.manager.probe;
+  f.manager.probe = async (...args) => ({ ...await good(...args), success: false });
+  await assert.rejects(f.manager.run('99.1.2'), /не подтвердила/);
+  assert.equal(f.manager.profiles.some(p => p.version === '99.1.2'), false);
+  assert.equal(f.installs.length, 1);
+  f.manager.probe = good;
+  assert.equal((await f.manager.run('99.1.2')).status, 'installed');
+  assert.equal(f.installs.at(-1).version, '99.1.2');
+  assert.deepEqual(await fs.readFile(f.manager.receiptPath), recovery);
+  const restarted = new UpdateManager({ storage: f.manager.storage, helper: f.helper,
+    profiles: [f.profile], verifyCandidate: async () => {} });
+  await restarted.loadProfiles();
+  assert.equal(restarted.profiles.find(p => p.version === '99.1.2').sourceSha256, sha('source'));
+  const proofBytes = await fs.readFile(restarted.profilesPath);
+  const changed = JSON.parse(proofBytes);
+  changed[0].profile.sourceSha256 = sha('another source');
+  await fs.writeFile(restarted.profilesPath, JSON.stringify(changed));
+  await restarted.loadProfiles();
+  assert.equal(restarted.profiles.length, 1, 'Changing a saved profile invalidates its GUI proof');
+  await fs.writeFile(restarted.profilesPath, proofBytes);
+  await fs.writeFile(path.join(f.helper, 'native-bridge.cjs'), 'changed build');
+  const upgraded = new UpdateManager({ storage: f.manager.storage, helper: f.helper,
+    profiles: [f.profile], verifyCandidate: async () => {} });
+  await upgraded.loadProfiles();
+  assert.equal(upgraded.profiles.length, 1, 'Proof from another helper build must not be trusted');
+});
+
 test('false, missing, stale and wrong-build runtime reports prevent installation', async t => {
   const f = await fixture(t);
   const good = f.manager.probe;

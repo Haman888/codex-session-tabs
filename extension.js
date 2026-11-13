@@ -61,7 +61,7 @@ function newSession() {
     query: `sessionTab=${randomUUID()}`,
   }));
   const version = vscode.extensions.getExtension('openai.chatgpt')?.packageJSON?.version;
-  let remaining = newChatWaitMs(profileFor(profiles, version)), previous = Date.now();
+  let remaining = newChatWaitMs(profileFor(updates.manager?.profiles || profiles, version)), previous = Date.now();
   while (remaining > 0) {
     const binding = titles?.bindings.get(uri.toString());
     if (binding?.isReady?.()) return uri;

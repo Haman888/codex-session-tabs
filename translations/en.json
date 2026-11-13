@@ -106,5 +106,9 @@
   "command.rename": "Rename session",
   "command.refresh": "Refresh sessions",
   "command.scope": "Choose session scope",
-  "welcome": "No Codex tabs are open.\n[New chat](command:codexSessionTabs.new)\n[Open from history](command:codexSessionTabs.history)"
+  "welcome": "No Codex tabs are open.\n[New chat](command:codexSessionTabs.new)\n[Open from history](command:codexSessionTabs.history)",
+  "update.confirmLatestCheck": "The check downloads the latest stable official Codex package (about 400 MB) and opens a separate VS Code test window for a few minutes. Installation is offered only after compatibility checks pass. Start?",
+  "update.newRelease": "Codex {version} is available. Check compatibility with tabs and update?",
+  "update.invalidProfile": "The discovered compatibility profile is invalid. Installation cancelled.",
+  "update.profileLimit": "The local compatibility history is full. No installed files were changed."
 }

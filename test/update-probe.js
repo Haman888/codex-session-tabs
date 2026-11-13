@@ -26,11 +26,11 @@ async function run() {
     const manifest = require('../package.json');
     const extension = vscode.extensions.getExtension(`${manifest.publisher}.${manifest.name}`);
     const vendor = vscode.extensions.getExtension('openai.chatgpt');
-    const rendererWait = newChatWaitMs(profileFor(require('../compatibility.json'), vendor.packageJSON.version));
     assert.equal(fs.realpathSync(extension.extensionPath), fs.realpathSync(process.env.CODEX_TABS_PROBE_HELPER));
     assert.equal(fs.realpathSync(vendor.extensionPath), fs.realpathSync(process.env.CODEX_TABS_PROBE_VENDOR));
     assert.equal(vscode.workspace.workspaceFolders, undefined);
     const api = await extension.activate();
+    const rendererWait = newChatWaitMs(profileFor(api.updates.manager.profiles, vendor.packageJSON.version));
     assert.ok(api.provider.context.globalStorageUri.fsPath.startsWith(process.env.CODEX_TABS_PROBE_USER_DATA + path.sep));
     assert.deepEqual(await api.listSessions(), []);
     assert.equal((await api.updates.check()).status, 'ready');
