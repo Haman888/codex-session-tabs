@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "finished": true,
+  "phase": "account-read",
+  "modelTurnsSent": 0,
+  "weekly": {
+    "usedPercent": 11,
+    "remainingPercent": 89,
+    "resetsAt": 1795157687
+  },
+  "indicator": "$(pulse) Codex · нед: осталось 89%",
+  "nativeBridgeAndIndicatorAgree": true
+}

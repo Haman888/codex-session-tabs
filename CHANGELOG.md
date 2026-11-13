@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.1 — fork (Haman888/codex-session-tabs)
+
+- Recover individual rate-limit windows when fresh notifications arrive after a failed read.
+- Merge an in-flight full snapshot with newer notifications per field, preserving newer percentages while filling missing weekly/reset metadata.
+- Keep late failures from hiding more recent values; never retain an expired reset timestamp merely because a sparse percentage arrived later.
+- Add four deterministic regressions covering these ordering and recovery cases.
+
 ## 0.8.0 — fork (Haman888/codex-session-tabs)
 
 - Show remaining weekly Codex account allowance in the status bar, with used/remaining percentages and reset times in localized details.

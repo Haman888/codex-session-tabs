@@ -120,3 +120,65 @@ test('rate reads accept only numeric usage metadata, strip account identity and 
     assert.equal(f.bridge.sanitizeRateLimits(null).buckets.length, 0);
   } finally { f.dispose(); }
 });
+
+test('fresh weekly notifications recover from a failed read without reviving the old short window', async () => {
+  const f = host();
+  try {
+    await f.api.refresh(); f.clock.value += 300001; f.state.fail = true;
+    await f.api.refresh();
+    assert.match(f.bar.text, /week: —/);
+    f.api.rates({ buckets: [{ id: 'codex', secondary: { usedPercent: 45 } }] }, true);
+    assert.match(f.bar.text, /55% left/);
+    await f.commands.get('codexSessionTabs.usage')();
+    const rows = f.state.picks.at(-1);
+    assert.match(rows.find(row => row.label === 'codex · 5h').detail, /outdated/);
+    assert.doesNotMatch(rows.find(row => row.label === 'codex · week').detail, /outdated/);
+  } finally { f.dispose(); }
+});
+
+test('an in-flight full read fills missing metadata while preserving newer partial percentages and buckets', async () => {
+  const f = host();
+  try {
+    let resolve;
+    f.state.pending = new Promise(done => { resolve = done; });
+    const read = f.api.refresh();
+    f.api.rates({ buckets: [{ id: 'codex', secondary: { usedPercent: 45 } },
+      { id: 'other', primary: { usedPercent: 15, windowDurationMins: 300 } }] }, true);
+    resolve({ buckets: [{ id: 'codex', primary: { usedPercent: 25, windowDurationMins: 300 },
+      secondary: { usedPercent: 40, windowDurationMins: 10080 } }] });
+    await read;
+    assert.match(f.bar.text, /55% left/);
+    assert.match(f.bar.tooltip, /Used 25%/);
+    assert.match(f.bar.tooltip, /Used 15%/);
+  } finally { f.dispose(); }
+});
+
+test('a late read failure cannot hide a newer weekly notification', async () => {
+  const f = host();
+  try {
+    await f.api.refresh(); f.clock.value += 300001;
+    let reject;
+    f.state.pending = new Promise((_resolve, fail) => { reject = fail; });
+    const read = f.api.refresh();
+    f.api.rates({ buckets: [{ id: 'codex', secondary: { usedPercent: 45 } }] }, true);
+    reject(new Error('offline')); await read;
+    assert.match(f.bar.text, /55% left/);
+    await f.commands.get('codexSessionTabs.usage')();
+    assert.match(f.state.picks.at(-1).find(row => row.label === 'codex · 5h').detail, /outdated/);
+  } finally { f.dispose(); }
+});
+
+test('a sparse percentage cannot retain an expired reset timestamp over a fresh full read', async () => {
+  const f = host();
+  try {
+    f.api.rates({ buckets: [{ id: 'codex', secondary: { usedPercent: 100, windowDurationMins: 10080, resetsAt: 999 } }] });
+    let resolve;
+    f.state.pending = new Promise(done => { resolve = done; });
+    const read = f.api.refresh();
+    f.api.rates({ buckets: [{ id: 'codex', secondary: { usedPercent: 5 } }] }, true);
+    resolve({ buckets: [{ id: 'codex', secondary: { usedPercent: 3, windowDurationMins: 10080, resetsAt: 900000 } }] });
+    await read;
+    assert.match(f.bar.text, /95% left/);
+    assert.doesNotMatch(f.bar.tooltip, /outdated/);
+  } finally { f.dispose(); }
+});

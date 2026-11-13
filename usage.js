@@ -8,12 +8,12 @@ function activateUsage(context, bindings, now = Date.now) {
   const bar = vscode.window.createStatusBarItem('codexSessionTabs.usage', vscode.StatusBarAlignment.Right, 29);
   bar.command = 'codexSessionTabs.usage';
   const buckets = new Map();
-  let retryAt = 0, lastAttempt = -Infinity, fetchedAt, failed = false, flight, generation = 0, revision = 0, disposed = false;
+  let retryAt = 0, lastAttempt = -Infinity, fetchedAt, flight, generation = 0, revision = 0, disposed = false;
   const enabled = () => vscode.workspace.getConfiguration('codexSessionTabs').get('showUsage', true);
   const duration = (window, key) => window.windowDurationMins === 10080 ? t('usage.week')
     : window.windowDurationMins && window.windowDurationMins % 60 === 0 ? t('usage.hours', { value: window.windowDurationMins / 60 })
     : window.windowDurationMins ? t('usage.minutes', { value: window.windowDurationMins }) : t(`usage.${key}`);
-  const outdated = window => failed || now() - window.observedAt > 600000
+  const outdated = window => window.failed || now() - window.observedAt > 600000
     || (window.resetsAt !== undefined && now() >= window.resetsAt * 1000);
   function rows() {
     const result = [];
@@ -45,23 +45,46 @@ function activateUsage(context, bindings, now = Date.now) {
     bar.accessibilityInformation = { label: bar.tooltip };
     bar.show();
   }
-  function rates(value, partial = false) {
+  function rates(value, partial = false, requestRevision = revision) {
     const safe = sanitizeRateLimits({ rateLimitsByLimitId: Object.fromEntries(
       (Array.isArray(value?.buckets) ? value.buckets : []).slice(0, 32).filter(bucket => bucket && typeof bucket.id === 'string').map(bucket => [bucket.id, bucket])) });
+    const previous = new Map(buckets);
+    revision++;
     if (!partial) buckets.clear();
     for (const bucket of safe.buckets) {
-      for (const key of ['primary', 'secondary']) if (bucket[key]) bucket[key] = {
-        ...(partial ? buckets.get(bucket.id)?.[key] : {}), ...bucket[key], observedAt: now(),
-      };
-      buckets.set(bucket.id, { ...(partial ? buckets.get(bucket.id) : {}), ...bucket });
+      for (const key of ['primary', 'secondary']) {
+        if (!bucket[key]) continue;
+        const before = previous.get(bucket.id)?.[key];
+        const incoming = bucket[key];
+        const next = { ...(partial ? before : {}), versions: { ...(partial ? before?.versions : {}) },
+          observedAt: now(), revision, failed: false };
+        for (const field of ['usedPercent', 'windowDurationMins', 'resetsAt']) {
+          if (!partial && before?.versions[field] > requestRevision) {
+            next[field] = before[field]; next.versions[field] = before.versions[field];
+            if (field === 'usedPercent') next.observedAt = before.observedAt;
+          } else if (incoming[field] !== undefined) {
+            next[field] = incoming[field]; next.versions[field] = revision;
+          }
+        }
+        bucket[key] = next;
+      }
+      buckets.set(bucket.id, { ...(partial ? previous.get(bucket.id) : {}), ...bucket });
     }
-    if (!partial) { fetchedAt = now(); failed = false; }
-    revision++;
+    if (!partial) {
+      for (const [id, bucket] of previous) {
+        for (const key of ['primary', 'secondary']) {
+          if (bucket[key]?.revision > requestRevision && !buckets.get(id)?.[key]) {
+            buckets.set(id, { ...buckets.get(id), id, [key]: bucket[key] });
+          }
+        }
+      }
+      fetchedAt = now();
+    }
     render();
   }
   function reset() {
     generation++; revision++; buckets.clear(); fetchedAt = undefined;
-    failed = false; retryAt = 0; lastAttempt = -Infinity; flight = undefined; render();
+    retryAt = 0; lastAttempt = -Infinity; flight = undefined; render();
   }
   async function refresh(force = false) {
     render();
@@ -76,9 +99,14 @@ function activateUsage(context, bindings, now = Date.now) {
     const operation = (async () => {
       try {
         const result = await binding.readRateLimits();
-        if (!disposed && generation === epoch && revision === sequence) rates(result);
+        if (!disposed && generation === epoch) rates(result, false, sequence);
       } catch {
-        if (!disposed && generation === epoch) { failed = true; render(); }
+        if (!disposed && generation === epoch) {
+          for (const bucket of buckets.values()) for (const key of ['primary', 'secondary']) {
+            if (bucket[key]?.revision <= sequence) bucket[key].failed = true;
+          }
+          render();
+        }
       }
     })();
     flight = operation;

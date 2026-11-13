@@ -1,0 +1,21 @@
+{
+  "attempt": "audit-081-final-2026-11-13",
+  "helper": "89b52e16de4aae42c21c0b910687b6883eb17600a2b0d684972c91024c449e02",
+  "success": true,
+  "finished": true,
+  "phase": "usage",
+  "checks": {
+    "isolation": true,
+    "nativeNewChat": true,
+    "interface": true,
+    "language": true,
+    "nativeTabs": true,
+    "titles": true,
+    "completion": true,
+    "acknowledgement": true,
+    "usage": true
+  },
+  "version": "26.1111.21308",
+  "acknowledgementMode": "explicit-acknowledgement-in-background-test",
+  "elapsedMs": 122696
+}

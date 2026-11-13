@@ -112,8 +112,8 @@ async function run() {
     report.checks.acknowledgement = true;
     report.phase = 'usage'; save();
     assert.equal(typeof binding.readRateLimits, 'function');
-    await api.usage.refresh(true);
     await vscode.commands.executeCommand('codexSessionTabs.nativeUsageReset');
+    await api.usage.refresh(true);
     await vscode.commands.executeCommand('codexSessionTabs.nativeRateLimits', { buckets: [{ id: 'codex',
       primary: { usedPercent: 25, windowDurationMins: 300 }, secondary: { usedPercent: 40, windowDurationMins: 10080 } }] });
     assert.match(api.usage.bar.text, /60%/);
