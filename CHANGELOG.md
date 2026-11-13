@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.4 — fork (Haman888/codex-session-tabs)
+
+- Check adapter health before opening or revealing a conversation. Unsupported, missing or changed adapters report the reason immediately; an installation awaiting reload cannot create another broken editor.
+- Preserve an existing download destination on failure. Delete only the rejected download created by this attempt, checking its file identity instead of its size.
+- Serialize stale update-lock reclamation so two windows cannot evict a newly acquired live lock. An interrupted reclamation fails closed until its remaining `.reclaim` file is inspected.
+- Add command-entry, download ownership and deterministic concurrent-lock regression tests. See `docs/audits/2026-11-13.md` for evidence and remaining limitations.
+
 ## 0.6.3 — fork (Haman888/codex-session-tabs)
 
 - **UX:** Moved companion to Activity Bar — "Codex Session Tabs" now appears as an icon in the left Activity Bar instead of secondary sidebar only

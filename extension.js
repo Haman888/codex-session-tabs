@@ -19,11 +19,14 @@ const EDITOR = 'chatgpt.conversationEditor';
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 let titles;
 let readTracker;
+let updates;
 let panelOpening = Promise.resolve();
 
 async function ensureCodex() {
   const codex = vscode.extensions.getExtension('openai.chatgpt');
   if (!codex) throw new Error(t('error.codexMissing'));
+  const health = await updates.check();
+  if (health.status !== 'ready') throw new Error(health.message);
   if (!codex.isActive) await codex.activate();
   // This is the internal editor used by the installed official Codex extension.
   // Refuse to guess if a future version changes its editor contribution.
@@ -204,7 +207,7 @@ function activate(context) {
   };
   titleOptions.iconsReady = prepareBadges(context).then(icons => { titleOptions.icons = icons; }, error => output.appendLine(t('log.iconsFailed', { message: errorText(error) })));
   titles = new Titles(context, () => listSessions(), render, output, titleOptions);
-  const updates = activateUpdates(context, output, () => [...titles.turns.values()].some(turn => turn.phase === 'started'));
+  updates = activateUpdates(context, output, () => [...titles.turns.values()].some(turn => turn.phase === 'started'));
   readTracker = createReadTracker(() => {
     const active = readableActiveTab();
     if (!active?.id || !titles.isUnread(active.id)) return undefined;

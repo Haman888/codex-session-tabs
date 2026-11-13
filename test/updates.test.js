@@ -6,11 +6,45 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
+const { spawnSync } = require('node:child_process');
 const { UpdateManager, helperHash, inspectInstalled, downloadOfficial } = require('../update-core');
 
 const { makeTemp } = require('./temp');
 const sha = value => createHash('sha256').update(value).digest('hex');
 const required = ['isolation', 'nativeTabs', 'titles', 'completion', 'acknowledgement', 'nativeNewChat', 'interface', 'language'];
+
+test('two stale-lock reclaimers never remove the new owner lock', { timeout: 10000 }, async t => {
+  const f = await fixture(t);
+  await fs.mkdir(f.manager.storage);
+  const dead = spawnSync(process.execPath, ['-e', 'process.exit(0)']).pid;
+  assert.throws(() => process.kill(dead, 0), { code: 'ESRCH' });
+  await fs.writeFile(path.join(f.manager.storage, 'operation.lock'), JSON.stringify({ pid: dead, nonce: 'stale' }));
+  const defer = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+  const paused = defer(), resume = defer(), entered = defer(), release = defer();
+  const rename = fs.rename;
+  let first = true, active = 0, maxActive = 0;
+  fs.rename = async (...args) => {
+    if (first) { first = false; paused.resolve(); await resume.promise; }
+    return rename(...args);
+  };
+  let a, b;
+  try {
+    a = f.manager.locked(async () => { active++; maxActive = Math.max(active, maxActive); active--; });
+    await paused.promise;
+    b = f.manager.locked(async () => { active++; maxActive = Math.max(active, maxActive); entered.resolve(); await release.promise; active--; })
+      .then(() => 'entered', () => 'refused');
+    await Promise.race([b, entered.promise]);
+    resume.resolve();
+    await a;
+    release.resolve();
+    await b;
+    assert.equal(maxActive, 1, 'A stale-lock reclaimer must not evict another live owner');
+    assert.equal(await f.manager.locked(async () => 'reusable'), 'reusable');
+  } finally {
+    fs.rename = rename; resume.resolve(); release.resolve();
+    await Promise.allSettled([a, b].filter(Boolean));
+  }
+});
 
 async function fixture(t) {
   const root = await makeTemp('up-unit-');

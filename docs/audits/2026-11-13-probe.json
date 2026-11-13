@@ -1,0 +1,20 @@
+{
+  "attempt": "repair-final-2026-11-13",
+  "helper": "f90cddc8397516971c727876739a1ed67bd39b2a18c4b0e35a3266e4c6c245cb",
+  "success": true,
+  "finished": true,
+  "phase": "titles-and-indicators",
+  "checks": {
+    "isolation": true,
+    "nativeNewChat": true,
+    "interface": true,
+    "language": true,
+    "nativeTabs": true,
+    "titles": true,
+    "completion": true,
+    "acknowledgement": true
+  },
+  "version": "26.1007.21434",
+  "acknowledgementMode": "focused-tab-selection",
+  "elapsedMs": 46538
+}

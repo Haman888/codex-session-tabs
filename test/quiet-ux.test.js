@@ -68,9 +68,9 @@ function updatesHost({ answer, status = 'ready', recovery } = {}) {
   return { api, seen, commands, output };
 }
 
-function extensionHost({ codex = true } = {}) {
+function extensionHost({ codex = true, health = 'ready' } = {}) {
   setLanguage('en');
-  const errors = [], lines = [], commands = new Map();
+  const errors = [], lines = [], commands = new Map(), opened = [];
   class EventEmitter {
     constructor() { this.listeners = new Set(); }
     event = fn => { this.listeners.add(fn); return { dispose: () => this.listeners.delete(fn) }; };
@@ -106,7 +106,10 @@ function extensionHost({ codex = true } = {}) {
     },
     commands: {
       registerCommand: (name, fn) => { commands.set(name, fn); return { dispose() { commands.delete(name); } }; },
-      executeCommand: async (name, ...args) => commands.get(name)?.(...args),
+      executeCommand: async (name, ...args) => {
+        if (name === 'vscode.openWith') opened.push(args[0]);
+        return commands.get(name)?.(...args);
+      },
     },
   };
   const saved = new Map();
@@ -120,7 +123,7 @@ function extensionHost({ codex = true } = {}) {
     if (name === 'node:fs') return { watch: () => ({ close() {} }) };
     if (name === './sessions') return { codexHome: () => '/synthetic', listSessions: async () => [], getSessionStatus: () => ({}), resetSessions() {} };
     if (name === './badges') return { prepareBadges: async () => ({}) };
-    if (name === './update-ui') return { activateUpdates: () => ({ check: async () => ({ status: 'ready' }) }) };
+    if (name === './update-ui') return { activateUpdates: () => ({ check: async () => ({ status: health, message: `Adapter: ${health}` }) }) };
     if (name === './ui-language') return { activateLanguage: () => ({ ready: Promise.resolve() }) };
     return name.startsWith('./') ? require(path.join(root, name)) : require(name);
   };
@@ -128,7 +131,8 @@ function extensionHost({ codex = true } = {}) {
     module, require: localRequire, setTimeout, clearTimeout, setInterval: () => 0, clearInterval() {},
   });
   const api = module.exports.activate(context);
-  return { api, commands, errors, lines,
+  return { api, commands, errors, lines, opened,
+    setHealth: value => { health = value; },
     dispose: () => { for (const subscription of [...context.subscriptions].reverse()) subscription.dispose?.(); } };
 }
 
@@ -194,6 +198,24 @@ test('other new-tab failures still show an error', async () => {
     await f.commands.get('codexSessionTabs.new')();
     assert.equal(f.errors.length, 1);
   } finally { f.dispose(); }
+});
+
+test('new and history commands refuse an unusable adapter before opening an editor', async () => {
+  for (const health of ['unsupported', 'adapter-missing', 'changed', 'reload-required']) {
+    const f = extensionHost({ health });
+    try {
+      await f.commands.get('codexSessionTabs.new')();
+      await f.commands.get('codexSessionTabs.open')('00000000-0000-0000-0000-000000000001');
+      const native = await f.commands.get('codexSessionTabs.nativeNewPanel')();
+      assert.equal(native.opened, false);
+      assert.equal(f.opened.length, 0, `${health} must not create broken editors`);
+      assert.equal(f.errors.length, 3);
+      assert.ok(f.errors.every(([message]) => message.includes(`Adapter: ${health}`)));
+      f.setHealth('ready');
+      await f.commands.get('codexSessionTabs.open')('00000000-0000-0000-0000-000000000001');
+      assert.equal(f.opened.length, 1, 'A repaired adapter is usable without a stale denial');
+    } finally { f.dispose(); }
+  }
 });
 
 test('a new chat waits as long as the profile lets Codex start, never less than 45 s', () => {

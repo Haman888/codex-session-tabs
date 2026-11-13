@@ -119,6 +119,16 @@ class UpdateManager {
     try { handle = await fs.open(file, 'wx', 0o600); }
     catch (error) {
       if (error.code !== 'EEXIST') throw error;
+      const reclaimFile = `${file}.reclaim`;
+      let reclaim;
+      try { reclaim = await fs.open(reclaimFile, 'wx', 0o600); }
+      catch (failure) {
+        if (failure.code === 'EEXIST') throw new Error(t('update.lockUnverified'));
+        throw failure;
+      }
+      try {
+      await reclaim.writeFile(JSON.stringify({ pid: process.pid, nonce }));
+      try {
       const stat = await fs.lstat(file);
       if (stat.isSymbolicLink()) throw new Error(t('update.badLock'));
       let previous;
@@ -127,15 +137,15 @@ class UpdateManager {
       if (!Number.isSafeInteger(previous.pid) || previous.pid < 1) throw new Error(t('update.lockUnverified'));
       try { process.kill(previous.pid, 0); throw new Error(t('update.alreadyRunning')); }
       catch (failure) { if (failure.code !== 'ESRCH') throw failure; }
-      // U8 fix: Rename stale lock instead of unlinking to prevent race
       const staleName = `${file}.stale.${Date.now()}.${randomUUID().slice(0, 8)}`;
-      try { await fs.rename(file, staleName); }
-      catch (renameError) {
-        // Another window may have already removed or renamed it
-        if (renameError.code !== 'ENOENT') throw renameError;
-      }
+      await fs.rename(file, staleName);
       try { await fs.unlink(staleName); } catch { /* Cleanup is best-effort */ }
+      } catch (failure) { if (failure.code !== 'ENOENT') throw failure; }
       handle = await fs.open(file, 'wx', 0o600);
+      } finally {
+        await reclaim.close();
+        await fs.unlink(reclaimFile);
+      }
     }
     await handle.writeFile(JSON.stringify({ pid: process.pid, nonce }));
     await handle.close();
