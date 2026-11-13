@@ -120,4 +120,3 @@ test('rate reads accept only numeric usage metadata, strip account identity and 
     assert.equal(f.bridge.sanitizeRateLimits(null).buckets.length, 0);
   } finally { f.dispose(); }
 });
-
