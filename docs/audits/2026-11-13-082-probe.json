@@ -1,0 +1,22 @@
+{
+  "attempt": "7929907a-5d36-46d1-a7c4-38a650499062",
+  "helper": "fa9c9b9ff5e26bdf9980ffcf798b086cf244324483a6071dece85175d663987f",
+  "profileSha256": "af55ecf25cef2a11e36d6ede1cfb7910c4f5c567bec58945497d1110b3b19045",
+  "success": true,
+  "finished": true,
+  "phase": "usage",
+  "checks": {
+    "isolation": true,
+    "nativeNewChat": true,
+    "interface": true,
+    "language": true,
+    "nativeTabs": true,
+    "titles": true,
+    "completion": true,
+    "acknowledgement": true,
+    "usage": true
+  },
+  "version": "26.1111.21308",
+  "acknowledgementMode": "explicit-acknowledgement-in-background-test",
+  "elapsedMs": 107758
+}

@@ -7,6 +7,7 @@ import io
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -294,6 +295,56 @@ def discover_latest(target, output, expected_version):
     return profile
 
 
+def stage_recovery(vsix, destination, helper, profile, expected_sha256):
+    vsix, destination, helper = map(Path, (vsix, destination, helper))
+    if not re.fullmatch(r"[a-f0-9]{64}", expected_sha256):
+        raise ValueError("Recovery package checksum mismatch.")
+    destination.mkdir(parents=True, exist_ok=False)
+    snapshot = destination / "recovery.vsix"
+    shutil.copyfile(vsix, snapshot)
+    if digest(snapshot) != expected_sha256:
+        raise ValueError("Recovery package changed while copying.")
+    with zipfile.ZipFile(snapshot) as archive:
+        validate_archive(archive)
+        package = json.loads(archive.read("extension/package.json"))
+        if (
+            package.get("publisher", "").lower() != "openai"
+            or package.get("name") != "chatgpt"
+            or package.get("version") != profile["version"]
+        ):
+            raise ValueError("Recovery package identity mismatch.")
+        expected = {
+            "out/extension.js": profile["patchedSourceSha256"],
+            "out/extension.js.before-session-tabs": profile["sourceSha256"],
+            "out/session-tabs-native.cjs": digest(helper / "native-bridge.cjs"),
+        }
+        if profile.get("renderer"):
+            expected[profile["renderer"]["path"]] = profile["renderer"]["patchedSha256"]
+            expected["out/session-tabs-renderer-original.js"] = profile["renderer"][
+                "originalSha256"
+            ]
+        for name, checksum in expected.items():
+            if hashlib.sha256(archive.read("extension/" + name)).hexdigest() != checksum:
+                raise ValueError("Recovery adapter is incompatible with this helper.")
+        archive.extractall(destination / "unpacked")
+        for member in archive.infolist():
+            if not member.is_dir():
+                (destination / "unpacked" / member.filename).chmod(
+                    0o755 if (member.external_attr >> 16) & 0o111 else 0o644
+                )
+    extensions = destination / "extensions"
+    extensions.mkdir()
+    vendor = extensions / "openai.chatgpt"
+    (destination / "unpacked/extension").rename(vendor)
+    return {
+        "vendor": str(vendor),
+        "extensionsDir": str(extensions),
+        "vsix": str(snapshot),
+        "version": profile["version"],
+        "treeSha256": tree_digest(vendor),
+    }
+
+
 def prepare(vsix, destination, helper, profile):
     vsix, destination, helper = map(Path, (vsix, destination, helper))
     if digest(vsix) != profile["vsixSha256"]:
@@ -374,6 +425,7 @@ def prepare(vsix, destination, helper, profile):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vsix")
+    parser.add_argument("--recovery-sha256")
     parser.add_argument("--destination")
     parser.add_argument("--helper")
     parser.add_argument("--profile")
@@ -404,6 +456,19 @@ if __name__ == "__main__":
     else:
         if not all([args.vsix, args.destination, args.helper, args.profile]):
             parser.error("Package, destination, helper and approved profile are required.")
+        if args.recovery_sha256:
+            print(
+                json.dumps(
+                    stage_recovery(
+                        args.vsix,
+                        args.destination,
+                        args.helper,
+                        json.loads(Path(args.profile).read_text()),
+                        args.recovery_sha256,
+                    )
+                )
+            )
+            sys.exit(0)
         print(
             json.dumps(
                 prepare(

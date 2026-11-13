@@ -12,7 +12,7 @@ const core = require('../update-core');
 const root = path.resolve(__dirname, '..');
 const disposable = () => ({ dispose() {} });
 
-function updatesHost({ answer, status = 'ready', recovery, driveProgress = false, env = {} } = {}) {
+function updatesHost({ answer, status = 'ready', recovery, locks = [], driveProgress = false, env = {} } = {}) {
   setLanguage('en');
   const seen = { info: [], warnings: [], errors: [], progress: 0, runs: [], restores: 0, metadata: 0 };
   const clock = { value: 1000000 }, timers = [];
@@ -50,6 +50,7 @@ function updatesHost({ answer, status = 'ready', recovery, driveProgress = false
     UpdateManager: class {
       async loadProfiles() {}
       async recovery() { return recovery; }
+      async lockStatus() { return locks; }
       async run(version) { seen.runs.push(version); return { status: 'verified', version }; }
       async restore() { seen.restores++; return { status: 'cancelled' }; }
     },
@@ -232,6 +233,14 @@ test('closing a new tab before it loads is not reported as an error', async () =
     assert.deepEqual(f.errors, []);
     assert.equal(f.lines.filter(line => /tab was closed/.test(line)).length, 2, 'The cancellation stays in the output channel');
   } finally { f.dispose(); }
+});
+
+test('the status command reports an abandoned recovery lock even when the chat adapter is healthy', async () => {
+  const f = updatesHost({ locks: [{ name: 'operation.lock.reclaim', state: 'stale' }] });
+  await f.commands.get('codexSessionTabs.updateStatus')();
+  assert.match(f.seen.info.at(-1)[0], /operation\.lock\.reclaim.*owner process has exited/);
+  assert.match(f.seen.info.at(-1)[0], /not been deleted/);
+  assert.equal(f.seen.progress, 0);
 });
 
 test('other new-tab failures still show an error', async () => {

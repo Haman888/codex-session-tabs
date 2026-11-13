@@ -6,6 +6,47 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { makeTemp } = require('./temp');
 
+test('recovery staging verifies saved bytes and adapter identity before execution and preserves executable bits', async t => {
+  const root = await makeTemp('recovery-package-');
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const script = String.raw`
+from pathlib import Path
+import hashlib,importlib.util,json,sys,zipfile
+root=Path(sys.argv[1]);spec=importlib.util.spec_from_file_location('update_package',sys.argv[2])
+module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+helper=root/'helper';helper.mkdir();(helper/'native-bridge.cjs').write_text('bridge')
+sha=lambda data:hashlib.sha256(data).hexdigest()
+profile={'version':'1.0.0','sourceSha256':sha(b'source'),'patchedSourceSha256':sha(b'patched')}
+for case in ['valid','hash','bridge','backup','source','identity','traversal','symlink']:
+    artifact=root/(case+'.vsix')
+    with zipfile.ZipFile(artifact,'w') as z:
+        z.writestr('extension/package.json',json.dumps({'name':'chatgpt','publisher':'openai','version':'2.0.0' if case=='identity' else '1.0.0'}))
+        z.writestr('extension/out/extension.js','wrong' if case=='source' else 'patched')
+        z.writestr('extension/out/extension.js.before-session-tabs','wrong' if case=='backup' else 'source')
+        z.writestr('extension/out/session-tabs-native.cjs','wrong' if case=='bridge' else 'bridge')
+        native=zipfile.ZipInfo('extension/bin/codex');native.external_attr=0o100755<<16;z.writestr(native,'native')
+        if case=='traversal':z.writestr('../outside','bad')
+        if case=='symlink':
+            link=zipfile.ZipInfo('extension/link');link.external_attr=0o120777<<16;z.writestr(link,'../../outside')
+    target=root/(case+'-stage')
+    checksum=sha(b'wrong') if case=='hash' else sha(artifact.read_bytes())
+    if case=='valid':
+        result=module.stage_recovery(artifact,target,helper,profile,checksum)
+        assert Path(result['vsix']).read_bytes()==artifact.read_bytes()
+        assert Path(result['vsix'])!=artifact
+        assert (Path(result['vendor'])/'bin/codex').stat().st_mode&0o111
+    else:
+        try:module.stage_recovery(artifact,target,helper,profile,checksum)
+        except ValueError:pass
+        else:raise AssertionError(case+' accepted')
+        assert not (target/'extensions').exists(),'untrusted code was staged'
+assert not (root/'outside').exists()
+print('8 recovery safety scenarios passed')
+`;
+  const output = execFileSync('python3', ['-B', '-c', script, root, path.resolve(__dirname, '../scripts/update_package.py')], { encoding: 'utf8' });
+  assert.match(output, /8 recovery safety scenarios passed/);
+});
+
 test('package preparation rejects traversal, links, duplicates and wrong hashes; preserves native executable bits', async t => {
   const root = await makeTemp('package-unit-');
   t.after(() => fs.rm(root, { recursive: true, force: true }));

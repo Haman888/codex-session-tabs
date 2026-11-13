@@ -27,7 +27,13 @@ async function helperHash(helper) {
     'i18n.js', 'ui-language.js', 'translations/en.json', 'translations/ru.json', 'package.nls.json', 'package.nls.ru.json',
     'native-bridge.cjs', 'usage.js', 'update-core.js', 'update-ui.js', 'compatibility.json',
     'scripts/native_adapter.py', 'scripts/renderer_adapter.py', 'scripts/update_package.py', 'scripts/read_history.py', 'test/update-probe.js']) {
-    hash.update(name); hash.update(await fs.readFile(path.join(helper, name)));
+    let content = await fs.readFile(path.join(helper, name));
+    if (name === 'package.json') {
+      const manifest = JSON.parse(content);
+      delete manifest.__metadata; delete manifest.version;
+      content = JSON.stringify(Object.fromEntries(Object.entries(manifest).sort(([a], [b]) => a.localeCompare(b))));
+    }
+    hash.update(name); hash.update(content);
   }
   return hash.digest('hex');
 }
@@ -130,14 +136,15 @@ async function downloadOfficial(profile, file, signal, fetcher = fetch) {
 }
 
 class UpdateManager {
-  constructor({ storage, helper, profiles, prepare, verifyCandidate, probe, install, discover, download = downloadOfficial, confirmInstall, isBusy = () => false }) {
+  constructor({ storage, helper, profiles, prepare, prepareRecovery, verifyCandidate, probe, install, discover, download = downloadOfficial, confirmInstall, isBusy = () => false }) {
     if (typeof verifyCandidate !== 'function') throw new Error(t('update.verifierRequired'));
-    Object.assign(this, { storage, helper, profiles, prepare, verifyCandidate, probe, install, discover, download, confirmInstall, isBusy });
+    Object.assign(this, { storage, helper, profiles, prepare, prepareRecovery, verifyCandidate, probe, install, discover, download, confirmInstall, isBusy });
     this.bundledProfiles = profiles.slice();
     this.receiptPath = path.join(storage, 'recovery.json');
+    this.retainedPath = path.join(storage, 'retained-recovery.json');
     this.profilesPath = path.join(storage, 'compatibility.local.json');
   }
-  async profileRecords() {
+  async profileRecords({ allowOlderBuild = false } = {}) {
     try {
       const stat = await fs.lstat(this.profilesPath);
       if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) return [];
@@ -145,7 +152,8 @@ class UpdateManager {
       if (!Array.isArray(records) || records.length > 128) return [];
       const build = await helperHash(this.helper);
       return records.filter(record => validDiscoveredProfile(record?.profile)
-        && completeProof(record.evidence, record.profile.version, build, record.profile)
+        && /^[a-f0-9]{64}$/.test(record.evidence?.helper)
+        && completeProof(record.evidence, record.profile.version, allowOlderBuild ? record.evidence.helper : build, record.profile)
         && !profileFor(this.bundledProfiles, record.profile.version));
     } catch { return []; }
   }
@@ -159,6 +167,25 @@ class UpdateManager {
     records.push({ profile, evidence });
     await atomicJson(this.profilesPath, records);
     await this.loadProfiles();
+  }
+  async lockStatus() {
+    const result = [];
+    for (const name of ['operation.lock', 'operation.lock.reclaim']) {
+      let state = 'unknown';
+      try {
+        const file = path.join(this.storage, name);
+        const stat = await fs.lstat(file);
+        if (stat.isFile() && !stat.isSymbolicLink() && stat.size <= 4096) {
+          const owner = JSON.parse(await fs.readFile(file, 'utf8'));
+          if (Number.isSafeInteger(owner.pid) && owner.pid > 0 && typeof owner.nonce === 'string' && owner.nonce) {
+            try { process.kill(owner.pid, 0); state = 'active'; }
+            catch (error) { if (error.code === 'ESRCH') state = 'stale'; }
+          }
+        }
+      } catch (error) { if (error.code === 'ENOENT') continue; }
+      result.push({ name, state });
+    }
+    return result;
   }
   async locked(action) {
     await fs.mkdir(this.storage, { recursive: true, mode: 0o700 });
@@ -205,20 +232,68 @@ class UpdateManager {
       } catch { /* A lock owned by another process must not be removed. */ }
     }
   }
-  async recovery({ checkFile = true } = {}) {
+  async recovery({ checkFile = true, allowRevalidation = false } = {}) {
     try {
+      const stat = await fs.lstat(this.receiptPath);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 16384) return undefined;
       const receipt = JSON.parse(await fs.readFile(this.receiptPath, 'utf8'));
-      if (!/^[a-f0-9]{64}$/.test(receipt.sha256) || !profileFor(this.profiles, receipt.version)
-        || receipt.helper !== await helperHash(this.helper)) return undefined;
+      if (!/^[a-f0-9]{64}$/.test(receipt.sha256) || !/^[a-f0-9]{64}$/.test(receipt.helper)) return undefined;
+      const profile = profileFor(this.profiles, receipt.version) || (allowRevalidation
+        ? (await this.profileRecords({ allowOlderBuild: true })).find(record => record.profile.version === receipt.version)?.profile : undefined);
+      if (!profile) return undefined;
+      const needsRevalidation = receipt.helper !== await helperHash(this.helper);
+      if (needsRevalidation && !allowRevalidation) return undefined;
       const file = path.join(this.storage, `${receipt.sha256}.vsix`);
-      if (checkFile ? await hashFile(file) !== receipt.sha256 : !(await fs.stat(file)).isFile()) return undefined;
-      return { ...receipt, file };
+      const artifact = await fs.lstat(file);
+      if (!artifact.isFile() || artifact.isSymbolicLink() || (checkFile && await hashFile(file) !== receipt.sha256)) return undefined;
+      return { ...receipt, file, profile, needsRevalidation };
     } catch { return undefined; }
+  }
+  async revalidateRecovery(saved, signal) {
+    if (!saved?.needsRevalidation) return saved;
+    if (typeof this.prepareRecovery !== 'function') throw new Error(t('update.noRecovery'));
+    const build = await helperHash(this.helper);
+    const before = await fs.readFile(this.receiptPath);
+    const job = await fs.mkdtemp(path.join(this.storage, 'job-'));
+    try {
+      signal?.throwIfAborted();
+      if (this.isBusy()) throw new Error(t('update.waitForReplies'));
+      const candidate = await this.prepareRecovery(saved, job, signal);
+      candidate.profile = saved.profile;
+      if (await hashFile(candidate.vsix) !== saved.sha256) throw new Error(t('update.savedChanged'));
+      await this.verifyCandidate(candidate, signal);
+      const attempt = randomUUID();
+      const evidence = await this.probe(candidate, job, { attempt, helper: build, profileSha256: profileHash(saved.profile) }, signal);
+      if (evidence.attempt !== attempt || !completeProof(evidence, saved.version, build, saved.profile)) throw new Error(t('update.probeFailed'));
+      await this.verifyCandidate(candidate, signal);
+      if (await hashFile(candidate.vsix) !== saved.sha256 || await hashFile(saved.file) !== saved.sha256
+        || await helperHash(this.helper) !== build || !(await fs.readFile(this.receiptPath)).equals(before)) {
+        throw new Error(t('update.filesChanged'));
+      }
+      signal?.throwIfAborted();
+      if (this.isBusy()) throw new Error(t('update.sessionStarted'));
+      if (saved.profile.discovery) await this.rememberProfile(saved.profile, evidence);
+      await atomicJson(this.receiptPath, { version: saved.version, sha256: saved.sha256, helper: build, verifiedAt: new Date().toISOString() });
+      return await this.recovery();
+    } finally { await fs.rm(job, { recursive: true, force: true }); }
   }
   async run(version, signal) {
     return this.locked(async () => {
       if (this.isBusy()) throw new Error(t('update.waitForReplies'));
       await this.loadProfiles();
+      const older = await this.recovery({ allowRevalidation: true });
+      let previous = older, retained;
+      try { previous = await this.revalidateRecovery(older, signal); }
+      catch (error) {
+        signal?.throwIfAborted();
+        if (this.isBusy() || !older?.needsRevalidation) throw error;
+        retained = await fs.readFile(this.receiptPath);
+        const receipt = JSON.parse(retained);
+        if (receipt.sha256 !== older.sha256 || receipt.helper !== older.helper || receipt.version !== older.version) {
+          throw new Error(t('update.filesChanged'));
+        }
+        previous = undefined;
+      }
       let profile = profileFor(this.profiles, version);
       if (!profile && !this.discover) throw new Error(t('update.unsupported', { version }));
       const build = await helperHash(this.helper);
@@ -257,23 +332,37 @@ class UpdateManager {
       const receipt = { version, sha256: candidateHash, helper: build, verifiedAt: new Date().toISOString() };
       // Save a proved recovery before touching the installed version. Never discard
       // an existing known-good recovery when admitting a newer candidate.
-      const previous = await this.recovery();
       if (profile.discovery) await this.rememberProfile(profile, evidence);
+      if (retained) {
+        if (!(await fs.readFile(this.receiptPath)).equals(retained)) throw new Error(t('update.filesChanged'));
+        await atomicJson(this.retainedPath, JSON.parse(retained));
+      }
       if (!previous) await atomicJson(this.receiptPath, receipt);
       // U6 fix regression: Clean up old cached VSIX files, but keep the receipt's file
       try {
         const recovery = await this.recovery();
         const keepHash = recovery?.sha256;
+        let retainedHash;
+        try {
+          const stat = await fs.lstat(this.retainedPath);
+          if (stat.isFile() && !stat.isSymbolicLink() && stat.size <= 16384) {
+            const value = JSON.parse(await fs.readFile(this.retainedPath, 'utf8')).sha256;
+            if (/^[a-f0-9]{64}$/.test(value)) retainedHash = value;
+          }
+        } catch {}
         const files = await fs.readdir(this.storage);
         for (const file of files) {
-          if (/^[0-9a-f]{64}\.vsix$/.test(file) && file !== `${candidateHash}.vsix` && file !== `${keepHash}.vsix`) {
+          if (/^[0-9a-f]{64}\.vsix$/.test(file) && file !== `${candidateHash}.vsix` && file !== `${keepHash}.vsix`
+            && file !== `${retainedHash}.vsix`) {
             await fs.unlink(path.join(this.storage, file)).catch(() => {});
           }
         }
       } catch { /* Cleanup is best-effort */ }
-      if (!await this.confirmInstall(version)) return { status: 'verified', version };
+      const recoveryInfo = retained ? { retainedRecoveryVersion: older.version } : {};
+      if (!await this.confirmInstall(version)) return { status: 'verified', version, ...recoveryInfo };
       if (this.isBusy()) throw new Error(t('update.busy'));
       signal?.throwIfAborted();
+      if (await helperHash(this.helper) !== build) throw new Error(t('update.filesChanged'));
       if (await hashFile(cached) !== candidateHash) throw new Error(t('update.savedChanged'));
       try { await this.install(cached, version); }
       catch (error) {
@@ -282,18 +371,21 @@ class UpdateManager {
       // Keep the previously proved recovery A when installing B. A clean-profile
       // probe is not proof that B will start with the user's real data after reload.
       if (!previous) await atomicJson(this.receiptPath, receipt);
-      return { status: 'installed', version };
+      return { status: 'installed', version, ...recoveryInfo };
       } finally { await fs.rm(job, { recursive: true, force: true }); }
     });
   }
-  async restore() {
+  async restore(signal) {
     return this.locked(async () => {
+      signal?.throwIfAborted();
       await this.loadProfiles();
       if (this.isBusy()) throw new Error(t('update.waitForReplies'));
-      const saved = await this.recovery();
+      const saved = await this.revalidateRecovery(await this.recovery({ allowRevalidation: true }), signal);
       if (!saved) throw new Error(t('update.noRecovery'));
       if (!await this.confirmInstall(saved.version, true)) return { status: 'cancelled' };
-      if (this.isBusy() || await hashFile(saved.file) !== saved.sha256) throw new Error(t('update.restorePostponed'));
+      signal?.throwIfAborted();
+      if (this.isBusy() || await hashFile(saved.file) !== saved.sha256
+        || await helperHash(this.helper) !== saved.helper) throw new Error(t('update.restorePostponed'));
       await this.install(saved.file, saved.version);
       return { status: 'restored', version: saved.version };
     });

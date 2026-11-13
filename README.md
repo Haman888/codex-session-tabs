@@ -8,7 +8,7 @@ Independent Codex editor tabs, an open-sessions sidebar, short titles and orange
 
 **Supported setup:** local VS Code on macOS, Python **3.9+** and the system `/usr/bin/sqlite3`. Compatibility profiles: Intel (`darwin-x64`) with official Codex **26.1111.21308** and recovery profile **26.1007.21434**, tested on an Intel Mac in this fork; Apple silicon (`darwin-arm64`) with official Codex **26.1021.22027**, unchanged from upstream, where it was tested. This fork has not been run on Apple silicon hardware. Tested with VS Code **1.146.0**. The manifest accepts VS Code 1.106+, but older releases, Windows, Linux and remote extension hosts have not been verified.
 
-**Preview 0.8.1 (fork).** Installers: `codex-session-tabs-0.8.1-darwin-arm64.vsix` for Apple silicon and `codex-session-tabs-0.8.1-darwin-x64.vsix` for Intel. Build them from this source revision; published packages, when available, are listed in [Releases](https://github.com/Haman888/codex-session-tabs/releases). The package ID is `kasiaalena.codex-session-tabs`. An earlier local installation with a different ID needs a separate state transfer before replacement. This build does not transfer that state automatically. Keep the earlier installation until a transfer has been prepared and checked.
+**Preview 0.8.2 (fork).** Installers: `codex-session-tabs-0.8.2-darwin-arm64.vsix` for Apple silicon and `codex-session-tabs-0.8.2-darwin-x64.vsix` for Intel. Build them from this source revision; published packages, when available, are listed in [Releases](https://github.com/Haman888/codex-session-tabs/releases). The package ID is `kasiaalena.codex-session-tabs`. An earlier local installation with a different ID needs a separate state transfer before replacement. This build does not transfer that state automatically. Keep the earlier installation until a transfer has been prepared and checked.
 
 ## Weekly account allowance
 
@@ -47,7 +47,7 @@ The selection immediately changes the companion's commands, menus, sections, not
 
 The check downloads the latest stable official package, about **400 MB**. Bundled profiles retain their pinned SHA-256. For an unlisted version, the updater recognizes one of the known adapter layouts, records the package and code hashes, then tests the candidate in a separate VS Code window before offering installation. Allow extra disk space for extraction and verification. The procedure creates CPU and disk load; run it when other work can pause. A second VS Code dock icon may appear temporarily. The test profile has empty history and sends no model messages. The test window closes automatically.
 
-After a successful check, the tested package is cached **before** installation is confirmed. Cancelling that final dialog leaves the installed Codex unchanged. An existing verified recovery is preserved. **Codex: Restore verified Codex** installs that recovery without repeating the download and test; its version may differ from the newly tested candidate.
+After a successful check, the tested package is cached **before** installation is confirmed. Cancelling that final dialog leaves the installed Codex unchanged. An existing verified recovery is preserved. **Codex: Restore verified Codex** installs that recovery without repeating the download (a changed companion first repeats verification); its version may differ from the newly tested candidate.
 
 Local VSIX installation pins that official Codex version and disables its ordinary automatic updates. Other extensions retain their settings. An explicit manual Update or Update All can replace the adapter. Compatible new releases no longer need a manually published version profile. Successful local GUI checks save a profile tied to the exact helper build. Unknown structures or failed checks leave the installed version unchanged. Major internal changes in Codex can still require a new helper release.
 
@@ -59,7 +59,9 @@ The status-bar shield shows adapter health. Checks run at startup, when installe
 
 **Codex: Restore verified Codex** checks the saved package and asks for confirmation before installation. Reload after replies finish. An existing working recovery is retained when a new candidate is checked; a failed check does not authorize installation.
 
-Recovery is tied to the companion build. Upgrading the companion can require another verification even when the official Codex version is unchanged. An intact package for an older companion is not proof that the new combination works. Do not edit recovery receipts to bypass verification.
+Recovery is tied to the companion runtime. Version-only changes and VS Code installation metadata do not invalidate it. After runtime changes, Restore checks the saved archive, adapter and staged files, runs the full isolated GUI probe and only then updates its receipt. This uses the saved package without downloading it again. A failed recovery check preserves the old receipt and package. Check and update can still verify a newer Codex independently; after success, an incompatible older recovery is retained separately and protected from cache cleanup. Changes to the native bridge may require a newly prepared official package. Do not edit receipts to bypass verification.
+
+The status command also diagnoses update locks: live owner, exited owner or unverifiable owner. It does not remove locks. Safe automatic cleanup of a leftover reclaim lock is not implemented.
 
 Five minutes after startup, when no replies are running, this fork checks release metadata at most once per day and can offer an update. Packages are not downloaded and no test window opens unless you run **Codex: Check and update Codex** and confirm the dialog. For errors, use the **Codex Session Tabs** Output channel. Avoid sharing raw reports that may include local paths or conversation names.
 
@@ -90,7 +92,7 @@ npm test
 npm run package
 ```
 
-Packaging uses the Python standard library and downloads no build dependencies. Output: `dist/codex-session-tabs-0.8.1-darwin-arm64.vsix` on Apple silicon or `dist/codex-session-tabs-0.8.1-darwin-x64.vsix` on Intel. To build for the other processor, run `python3 scripts/package.py darwin-arm64` or `python3 scripts/package.py darwin-x64`.
+Packaging uses the Python standard library and downloads no build dependencies. Output: `dist/codex-session-tabs-0.8.2-darwin-arm64.vsix` on Apple silicon or `dist/codex-session-tabs-0.8.2-darwin-x64.vsix` on Intel. To build for the other processor, run `python3 scripts/package.py darwin-arm64` or `python3 scripts/package.py darwin-x64`.
 
 `npm test` uses small artificial fixtures in system temporary storage. It does not use real Codex history or launch GUI windows. The runtime protection check uses a separate empty profile.
 
@@ -130,3 +132,5 @@ Then uninstall **Codex Session Tabs** in VS Code and reload after current replie
 [MIT](LICENSE) for this companion's code. The official extension and OpenAI artwork are separate; OpenAI and Codex names belong to their owners.
 
 The developer scenario `test/forward-integration.js` exercises the actual update command against a disposable helper copy with the latest bundled profile removed. Use a fresh private integration profile, empty extensions directory and separate empty `CODEX_HOME`. It downloads the official stable release, runs the nested GUI probe, then verifies learned-profile loading and recovery in a new manager instance. It declines installation into the test host.
+
+The developer runner `test/recovery-command.cjs` accepts the absolute Code binary path and an older recovery receipt path. It creates a private disposable profile, invokes the production recovery command, runs the real isolated GUI probe, installs through the real CLI into a separate extensions directory and verifies a restarted manager. It substitutes the surrounding VS Code API; it does not verify restoration of open tabs. `test/recovery-integration.js` provides the heavier two-phase (`CODEX_TABS_RECOVERY_PHASE=restore/restart`) test with two real tabs in a private integration profile.

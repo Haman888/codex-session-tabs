@@ -55,7 +55,7 @@ async function fixture(t) {
     'native-bridge.cjs', 'usage.js', 'update-core.js', 'update-ui.js', 'compatibility.json',
     'scripts/native_adapter.py', 'scripts/renderer_adapter.py', 'scripts/update_package.py', 'scripts/read_history.py', 'test/update-probe.js']) {
     const file = path.join(helper, name); await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, 'fixture');
+    await fs.writeFile(file, name === 'package.json' ? JSON.stringify({ version: '0.8.1', main: 'extension.js' }) : 'fixture');
   }
   const profile = { version: '1.0.0', platform: `${process.platform}-${process.arch}`, vsixSha256: sha('official bytes') };
   const installs = [];
@@ -67,8 +67,13 @@ async function fixture(t) {
       return { vsix: file };
     },
     verifyCandidate: async () => {},
+    prepareRecovery: async (saved, job) => {
+      const file = path.join(job, 'recovery.vsix');
+      await fs.copyFile(saved.file, file);
+      return { vsix: file };
+    },
     probe: async (_candidate, _job, evidence) => ({ ...evidence, version: profile.version,
-      success: true, checks: Object.fromEntries(required.map(key => [key, true])) }),
+      success: true, finished: true, checks: Object.fromEntries(required.map(key => [key, true])) }),
     confirmInstall: async () => consent,
     install: async (file, version) => { installs.push({ bytes: await fs.readFile(file, 'utf8'), version }); },
     isBusy: () => busy,
@@ -135,6 +140,14 @@ test('a discovered version is admitted only after its GUI proof and survives a r
     profiles: [f.profile], verifyCandidate: async () => {} });
   await upgraded.loadProfiles();
   assert.equal(upgraded.profiles.length, 1, 'Proof from another helper build must not be trusted');
+  const cached = await fs.readFile(f.manager.receiptPath, 'utf8');
+  const previous = JSON.parse(cached);
+  await fs.writeFile(f.manager.receiptPath, JSON.stringify({ ...previous, version: future.version }));
+  f.manager.bundledProfiles = [f.profile];
+  await f.manager.loadProfiles();
+  assert.equal((await f.manager.restore()).status, 'restored');
+  assert.equal(f.manager.profiles.find(p => p.version === future.version).discovery, 'structure-v1');
+  assert.equal((await f.manager.recovery()).version, future.version);
 });
 
 test('false, missing, stale and wrong-build runtime reports prevent installation', async t => {
@@ -256,4 +269,180 @@ test('downloader accepts only an approved official URL and exact bytes', async t
   await downloadOfficial(profile, path.join(f.root, 'download.vsix'), undefined, fetcher);
   await assert.rejects(downloadOfficial({ ...profile, url: 'http://example.com/package' }, path.join(f.root, 'bad.vsix'), undefined, fetcher), /официальный источник/);
   await assert.rejects(downloadOfficial({ ...profile, vsixSha256: 'wrong' }, path.join(f.root, 'bad-hash.vsix'), undefined, fetcher), /Контрольная сумма/);
+});
+
+test('version and installation metadata changes preserve recovery; command changes require a new proof', async t => {
+  const f = await fixture(t);
+  await f.manager.run('1.0.0');
+  await fs.writeFile(path.join(f.helper, 'package.json'), JSON.stringify({ main: 'extension.js', version: '0.9.0',
+    __metadata: { installedTimestamp: 123 } }));
+  assert.ok(await f.manager.recovery());
+  await fs.writeFile(path.join(f.helper, 'package.json'), JSON.stringify({ version: '0.9.0', main: 'other.js' }));
+  assert.equal(await f.manager.recovery(), undefined);
+});
+
+test('restore revalidates an older helper recovery before installing and survives a manager restart', async t => {
+  const f = await fixture(t);
+  await f.manager.run('1.0.0');
+  await fs.writeFile(path.join(f.helper, 'extension.js'), 'new runtime');
+  const old = await fs.readFile(f.manager.receiptPath);
+  let checked = false;
+  const probe = f.manager.probe;
+  f.manager.probe = async (...args) => {
+    assert.equal(f.installs.length, 1);
+    assert.deepEqual(await fs.readFile(f.manager.receiptPath), old);
+    checked = true;
+    return probe(...args);
+  };
+  assert.equal((await f.manager.restore()).status, 'restored');
+  assert.equal(checked, true);
+  assert.equal(f.installs.length, 2);
+  const restarted = new UpdateManager({ storage: f.manager.storage, helper: f.helper,
+    profiles: [f.profile], verifyCandidate: async () => {} });
+  assert.ok(await restarted.recovery());
+});
+
+test('failed revalidation preserves the old receipt and package without installing', async t => {
+  const f = await fixture(t);
+  await f.manager.run('1.0.0');
+  const saved = await f.manager.recovery();
+  const receipt = await fs.readFile(f.manager.receiptPath);
+  await fs.writeFile(path.join(f.helper, 'extension.js'), 'new runtime');
+  f.manager.probe = async () => { throw Error('new runtime refused'); };
+  await assert.rejects(f.manager.restore(), /new runtime refused/);
+  assert.deepEqual(await fs.readFile(f.manager.receiptPath), receipt);
+  assert.equal(await fs.readFile(saved.file, 'utf8'), 'tested patched bytes');
+  assert.equal(f.installs.length, 1);
+  assert.ok((await fs.readdir(f.manager.storage)).every(name => !name.startsWith('job-')));
+});
+
+test('revalidation rejects stale proof, changed staged bytes and a helper changed during the probe', async t => {
+  for (const failure of ['proof', 'package', 'helper']) {
+    const f = await fixture(t);
+    await f.manager.run('1.0.0');
+    const before = await fs.readFile(f.manager.receiptPath);
+    await fs.writeFile(path.join(f.helper, 'extension.js'), 'new runtime');
+    const probe = f.manager.probe;
+    f.manager.probe = async (candidate, ...args) => {
+      const evidence = await probe(candidate, ...args);
+      if (failure === 'proof') evidence.attempt = 'previous';
+      if (failure === 'package') await fs.writeFile(candidate.vsix, 'changed');
+      if (failure === 'helper') await fs.writeFile(path.join(f.helper, 'usage.js'), 'changed');
+      return evidence;
+    };
+    await assert.rejects(f.manager.restore(), /не подтвердила|Файлы изменились/);
+    assert.deepEqual(await fs.readFile(f.manager.receiptPath), before);
+    assert.equal(f.installs.length, 1);
+  }
+});
+
+test('installing a newer version revalidates and preserves the previous recovery after a helper upgrade', async t => {
+  const f = await fixture(t);
+  await f.manager.run('1.0.0');
+  await fs.writeFile(path.join(f.helper, 'extension.js'), 'new runtime');
+  const next = { ...f.profile, version: '2.0.0' };
+  f.manager.profiles.push(next); f.manager.bundledProfiles.push(next);
+  const prepare = f.manager.prepare;
+  f.manager.prepare = async (...args) => {
+    const result = await prepare(...args);
+    await fs.writeFile(result.vsix, 'new version bytes');
+    return result;
+  };
+  f.manager.probe = async (candidate, _job, evidence) => ({ ...evidence, version: candidate.profile.version,
+    finished: true, success: true, checks: Object.fromEntries(required.map(key => [key, true])) });
+  await f.manager.run('2.0.0');
+  const saved = await f.manager.recovery();
+  assert.equal(saved.version, '1.0.0');
+  assert.equal(await fs.readFile(saved.file, 'utf8'), 'tested patched bytes');
+});
+
+test('an incompatible old recovery is retained while a separately verified newer Codex can be installed', async t => {
+  const f = await fixture(t);
+  await f.manager.run('1.0.0');
+  const before = await fs.readFile(f.manager.receiptPath);
+  const old = await f.manager.recovery();
+  await fs.writeFile(path.join(f.helper, 'native-bridge.cjs'), 'new bridge');
+  const next = { ...f.profile, version: '2.0.0' };
+  f.manager.profiles.push(next); f.manager.bundledProfiles.push(next);
+  f.manager.prepareRecovery = async () => { throw Error('old adapter is incompatible'); };
+  f.manager.prepare = async (_original, job) => {
+    const vsix = path.join(job, 'new.vsix'); await fs.writeFile(vsix, 'new compatible package');
+    return { vsix };
+  };
+  f.manager.probe = async (candidate, _job, evidence) => ({ ...evidence, version: candidate.profile.version,
+    finished: true, success: true, checks: Object.fromEntries(required.map(key => [key, true])) });
+  const result = await f.manager.run('2.0.0');
+  assert.equal(result.status, 'installed');
+  assert.equal(result.retainedRecoveryVersion, '1.0.0');
+  assert.equal((await f.manager.recovery()).version, '2.0.0');
+  assert.deepEqual(await fs.readFile(path.join(f.manager.storage, 'retained-recovery.json')), before);
+  assert.equal(await fs.readFile(old.file, 'utf8'), 'tested patched bytes');
+  await f.manager.run('2.0.0');
+  assert.equal(await fs.readFile(old.file, 'utf8'), 'tested patched bytes');
+});
+
+test('restore refuses helper changes made while the installation confirmation is open', async t => {
+  const f = await fixture(t);
+  await f.manager.run('1.0.0');
+  f.manager.confirmInstall = async () => {
+    await fs.writeFile(path.join(f.helper, 'native-bridge.cjs'), 'changed bridge');
+    return true;
+  };
+  await assert.rejects(f.manager.restore(), /состояние изменилось/);
+  assert.equal(f.installs.length, 1);
+});
+
+test('update refuses helper changes made while the installation confirmation is open', async t => {
+  const f = await fixture(t);
+  f.manager.confirmInstall = async () => {
+    await fs.writeFile(path.join(f.helper, 'native-bridge.cjs'), 'changed bridge');
+    return true;
+  };
+  await assert.rejects(f.manager.run('1.0.0'), /Файлы изменились/);
+  assert.equal(f.installs.length, 0);
+});
+
+test('recovery rejects linked receipts and linked packages even when their contents match', async t => {
+  const f = await fixture(t);
+  await f.manager.run('1.0.0');
+  const saved = await f.manager.recovery();
+  const original = f.manager.receiptPath + '.original';
+  await fs.rename(f.manager.receiptPath, original);
+  await fs.symlink(original, f.manager.receiptPath);
+  assert.equal(await f.manager.recovery(), undefined);
+  await fs.unlink(f.manager.receiptPath); await fs.rename(original, f.manager.receiptPath);
+  await fs.rename(saved.file, saved.file + '.original');
+  await fs.symlink(saved.file + '.original', saved.file);
+  assert.equal(await f.manager.recovery({ checkFile: false, allowRevalidation: true }), undefined);
+});
+
+test('lock diagnostics distinguish a live update, a dead reclaimer and unverifiable state without deleting locks', async t => {
+  const f = await fixture(t);
+  assert.deepEqual(await f.manager.lockStatus(), []);
+  await fs.mkdir(f.manager.storage);
+  const dead = spawnSync(process.execPath, ['-e', 'process.exit(0)']).pid;
+  assert.throws(() => process.kill(dead, 0), { code: 'ESRCH' });
+  const operation = path.join(f.manager.storage, 'operation.lock');
+  const reclaim = operation + '.reclaim';
+  await fs.writeFile(operation, JSON.stringify({ pid: process.pid, nonce: 'live' }));
+  await fs.writeFile(reclaim, JSON.stringify({ pid: dead, nonce: 'old' }));
+  assert.deepEqual(await f.manager.lockStatus(), [
+    { name: 'operation.lock', state: 'active' }, { name: 'operation.lock.reclaim', state: 'stale' },
+  ]);
+  await fs.writeFile(operation, '');
+  const before = await fs.readFile(reclaim);
+  assert.equal((await f.manager.lockStatus())[0].state, 'unknown');
+  assert.deepEqual(await fs.readFile(reclaim), before);
+  await fs.unlink(operation); await fs.symlink(reclaim, operation);
+  assert.equal((await f.manager.lockStatus())[0].state, 'unknown');
+});
+
+test('cancelling recovery leaves the previous receipt and never installs', async t => {
+  const f = await fixture(t);
+  await f.manager.run('1.0.0');
+  const before = await fs.readFile(f.manager.receiptPath);
+  const abort = new AbortController(); abort.abort();
+  await assert.rejects(f.manager.restore(abort.signal), { name: 'AbortError' });
+  assert.equal(f.installs.length, 1);
+  assert.deepEqual(await fs.readFile(f.manager.receiptPath), before);
 });

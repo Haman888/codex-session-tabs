@@ -97,6 +97,13 @@ function activateUpdates(context, output, isBusy) {
       await runChild('python3', ['-I', path.join(helper, 'scripts/update_package.py'),
         '--verify-tree', candidate.vendor, '--expected-tree', candidate.treeSha256], { signal });
     },
+    prepareRecovery: async (saved, job, signal) => {
+      const policy = path.join(job, 'profile.json');
+      await fs.writeFile(policy, JSON.stringify(saved.profile));
+      return JSON.parse(await runChild('python3', ['-I', path.join(helper, 'scripts/update_package.py'),
+        '--vsix', saved.file, '--recovery-sha256', saved.sha256, '--destination', path.join(job, 'candidate'),
+        '--helper', helper, '--profile', policy], { signal, timeout: 600000 }));
+    },
     probe: async (candidate, _job, evidence, signal) => {
       const parent = testMode && process.env.CODEX_TABS_LAB_PROFILES || os.tmpdir();
       await fs.mkdir(parent, { recursive: true });
@@ -196,7 +203,7 @@ function activateUpdates(context, output, isBusy) {
       if (answer !== action) return { status: 'cancelled' };
     }
     return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
-      title: restoring ? t('update.progressRestore') : t('update.progressCheck'), cancellable: !restoring },
+      title: restoring ? t('update.progressRestore') : t('update.progressCheck'), cancellable: true },
     async (_progress, token) => {
       const abort = new AbortController();
       const cancel = token.onCancellationRequested(() => abort.abort());
@@ -207,8 +214,13 @@ function activateUpdates(context, output, isBusy) {
             ? { latest: supported.version } : await latestStable(profiles, helper, abort.signal);
           version = release.latest;
         }
-        const result = restoring ? await manager.restore() : await manager.run(version, abort.signal);
+        const result = restoring ? await manager.restore(abort.signal) : await manager.run(version, abort.signal);
         await check();
+        if (result.retainedRecoveryVersion) {
+          const message = t('update.recoveryRetained', { version: result.retainedRecoveryVersion });
+          output.appendLine(message);
+          void vscode.window.showInformationMessage(message);
+        }
         if (['installed', 'restored'].includes(result.status)) {
           await context.globalState.update('managedCodexVersion', result.version);
           const reloadLabel = t('action.reload');
@@ -242,11 +254,11 @@ function activateUpdates(context, output, isBusy) {
         notice = last.status;
         if (!['ready', 'reload-required'].includes(last.status)) {
           // U7 fix: Use checkFile:false to avoid reading VSIX here (already checked in background)
-          const saved = await manager.recovery({ checkFile: false });
-          vscode.window.showWarningMessage(saved ? t('update.canRestore', { message: last.message }) : last.message,
+          const saved = await manager.recovery({ checkFile: false, allowRevalidation: true });
+          vscode.window.showWarningMessage(saved ? t(saved.needsRevalidation ? 'update.canRevalidate' : 'update.canRestore', { message: last.message }) : last.message,
             saved ? t('action.restoreCodex') : t('action.checkUpdate'))
             .then(action => { if (action) return safe(async () => {
-              if (await manager.recovery()) return run(true);
+              if (await manager.recovery({ allowRevalidation: true })) return run(true);
               return run(false);
             })(); }, () => {});
         }
@@ -260,13 +272,15 @@ function activateUpdates(context, output, isBusy) {
     vscode.commands.registerCommand('codexSessionTabs.restoreCodex', safe(() => run(true))),
     vscode.commands.registerCommand('codexSessionTabs.updateStatus', async () => {
       const state = await check();
+      const locks = await manager.lockStatus();
+      const message = [state.message, ...locks.map(lock => `${lock.name}: ${t(`update.lock.${lock.state}`)}`)].join('\n');
       if (['ready', 'reload-required'].includes(state.status)) {
-        await vscode.window.showInformationMessage(state.message);
+        await vscode.window.showInformationMessage(message);
         return state;
       }
       const checkLabel = t('action.checkUpdate'), restoreLabel = t('action.restore');
-      const recovered = await manager.recovery({ checkFile: false });
-      const action = await vscode.window.showInformationMessage(state.message, checkLabel, ...(recovered ? [restoreLabel] : []));
+      const recovered = await manager.recovery({ checkFile: false, allowRevalidation: true });
+      const action = await vscode.window.showInformationMessage(message, checkLabel, ...(recovered ? [restoreLabel] : []));
       if (action === checkLabel) return safe(() => run(false))();
       if (action === restoreLabel) return safe(() => run(true))();
       return state;

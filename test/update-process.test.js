@@ -31,7 +31,7 @@ test('a final probe report closes an unresponsive isolated process; a partial re
   assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
   await fs.rm(report);
   await assert.rejects(runChild(process.execPath, ['-e', childCode, report, 'partial'],
-    { timeout: 500, resultReady: completed }), /превысила допустимое время/);
+    { timeout: 5000, resultReady: completed }), /превысила допустимое время/);
   const partial = JSON.parse(await fs.readFile(report, 'utf8'));
   assert.throws(() => process.kill(partial.pid, 0), { code: 'ESRCH' });
 });

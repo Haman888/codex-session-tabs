@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.2 — fork (Haman888/codex-session-tabs)
+
+- Revalidate an older companion's saved recovery through archive, adapter, tree and isolated GUI checks before restoring it. Preserve the previous recovery across companion upgrades and later Codex installations.
+- If the old recovery cannot be revalidated, retain it separately and require independent verification of the newer candidate. Cache cleanup keeps the retained package.
+- Allow cancellation during recovery revalidation and use a bounded ten-minute preparation deadline without an extra read of the source archive.
+- Ignore only manifest version and VS Code installation metadata in the companion fingerprint; runtime code, translations and command configuration remain covered.
+- Recheck the companion immediately before installing an update or recovery, including after the confirmation dialog.
+- Reject linked recovery receipts/packages and show live, stale or unknown lock ownership in the existing status command. Diagnostics never remove a lock.
+- Add recovery migration, failed-proof, archive-safety and restart integration coverage.
+
 ## 0.8.1 — fork (Haman888/codex-session-tabs)
 
 - Recover individual rate-limit windows when fresh notifications arrive after a failed read.
