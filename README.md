@@ -33,12 +33,12 @@ The selection immediately changes the companion's commands, menus, sections, not
 1. Install the official Codex extension (`openai.chatgpt`) and sign in to your own account.
 2. Download the matching VSIX from Releases, or build it as described below. Run **Extensions: Install from VSIX…** in VS Code and select the file.
 3. Run **Codex: Check and update Codex** and confirm the dialog that names the download size. The official extension directory is detected automatically.
-4. Wait for verification, then review the separate installation confirmation. The supported version may be older than the latest Marketplace release; the dialog names the version being installed.
+4. Wait for verification, then review the separate installation confirmation. The dialog names the tested version. If the latest release is incompatible, installation is cancelled.
 5. After current replies finish, run **Developer: Reload Window**. The companion never reloads the working window without your action.
 
 The check downloads the latest stable official package, about **400 MB**. Bundled profiles retain their pinned SHA-256. For an unlisted version, the updater recognizes one of the known adapter layouts, records the package and code hashes, then tests the candidate in a separate VS Code window before offering installation. Allow extra disk space for extraction and verification. The procedure creates CPU and disk load; run it when other work can pause. A second VS Code dock icon may appear temporarily. The test profile has empty history and sends no model messages. The test window closes automatically.
 
-After a successful check, the recovery package is saved **before** installation is confirmed. Cancelling that final dialog keeps the package and leaves the installed Codex unchanged. Later, **Codex: Restore verified Codex** can install it without repeating the download and test.
+After a successful check, the tested package is cached **before** installation is confirmed. Cancelling that final dialog leaves the installed Codex unchanged. An existing verified recovery is preserved. **Codex: Restore verified Codex** installs that recovery without repeating the download and test; its version may differ from the newly tested candidate.
 
 Local VSIX installation pins that official Codex version and disables its ordinary automatic updates. Other extensions retain their settings. An explicit manual Update or Update All can replace the adapter. Compatible new releases no longer need a manually published version profile. Successful local GUI checks save a profile tied to the exact helper build. Unknown structures or failed checks leave the installed version unchanged. Major internal changes in Codex can still require a new helper release.
 
