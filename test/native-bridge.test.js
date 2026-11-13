@@ -143,6 +143,18 @@ test('native bridge restores exact identity, ignores prefetch, forwards first tu
   assert.equal(sent.method, 'thread/name/set');
   assert.equal(sent.params.threadId, ID);
   assert.equal(sent.params.name, 'Ручное название');
+  listener.onNotification({ method: 'account/rateLimits/updated', params: { rateLimits: { primary: { usedPercent: 25 } } } });
+  assert.equal(calls.find(call => call.command === 'codexSessionTabs.nativeRateLimits').data.buckets[0].primary.usedPercent, 25);
+  owner.codexMcpConnection.sendRequest = (_provider, id, method, params) => {
+    assert.equal(method, 'account/rateLimits/read');
+    assert.equal(Object.keys(params).length, 0);
+    listener.onResult({ id, result: { accountId: 'private-account', rateLimits: { primary: { usedPercent: 30 } } } });
+  };
+  const rates = await binding.readRateLimits();
+  assert.equal(rates.buckets[0].primary.usedPercent, 30);
+  assert.doesNotMatch(JSON.stringify(rates), /private-account|accountId/);
+  listener.onNotification({ method: 'account/updated', params: { accountId: 'private-account' } });
+  assert.equal(calls.filter(call => call.command === 'codexSessionTabs.nativeUsageReset').length, 1);
   owner.codexMcpConnection.sendRequest = (_provider, id) => listener.onResult({ id, error: {} });
   const { setLanguage, errorText } = require('../i18n');
   await assert.rejects(binding.rename(ID, 'Manual name'), error => {

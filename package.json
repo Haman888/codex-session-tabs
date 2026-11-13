@@ -2,7 +2,7 @@
   "name": "codex-session-tabs",
   "displayName": "Codex Session Tabs (fork)",
   "description": "%package.description%",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "publisher": "kasiaalena",
   "license": "MIT",
   "repository": {
@@ -38,7 +38,8 @@
     "onCommand:codexSessionTabs.close",
     "onCommand:codexSessionTabs.rename",
     "onCommand:codexSessionTabs.refresh",
-    "onCommand:codexSessionTabs.scope"
+    "onCommand:codexSessionTabs.scope",
+    "onCommand:codexSessionTabs.usage"
   ],
   "extensionDependencies": [],
   "contributes": {
@@ -174,6 +175,18 @@
         "title": "Language / Язык",
         "category": "Codex",
         "icon": "$(globe)"
+      },
+      {
+        "command": "codexSessionTabs.usage.en",
+        "title": "Codex account limits",
+        "category": "Codex",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "codexSessionTabs.usage.ru",
+        "title": "Лимиты аккаунта Codex",
+        "category": "Codex",
+        "icon": "$(pulse)"
       }
     ],
     "viewsContainers": {
@@ -390,6 +403,14 @@
         {
           "command": "codexSessionTabs.scope.ru",
           "when": "codexSessionTabs.uiLanguage == ru"
+        },
+        {
+          "command": "codexSessionTabs.usage.en",
+          "when": "codexSessionTabs.uiLanguage == en"
+        },
+        {
+          "command": "codexSessionTabs.usage.ru",
+          "when": "codexSessionTabs.uiLanguage == ru"
         }
       ]
     },
@@ -411,6 +432,12 @@
             "%setting.english%",
             "%setting.russian%"
           ]
+        },
+        "codexSessionTabs.showUsage": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "%setting.showUsage%"
         }
       }
     }

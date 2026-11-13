@@ -11,7 +11,7 @@ const { UpdateManager, helperHash, inspectInstalled, downloadOfficial } = requir
 
 const { makeTemp } = require('./temp');
 const sha = value => createHash('sha256').update(value).digest('hex');
-const required = ['isolation', 'nativeTabs', 'titles', 'completion', 'acknowledgement', 'nativeNewChat', 'interface', 'language'];
+const required = ['isolation', 'nativeTabs', 'titles', 'completion', 'acknowledgement', 'nativeNewChat', 'interface', 'language', 'usage'];
 
 test('two stale-lock reclaimers never remove the new owner lock', { timeout: 10000 }, async t => {
   const f = await fixture(t);
@@ -52,7 +52,7 @@ async function fixture(t) {
   const helper = path.join(root, 'helper');
   for (const name of ['package.json', 'extension.js', 'sessions.js', 'titles.js', 'badges.js',
     'i18n.js', 'ui-language.js', 'translations/en.json', 'translations/ru.json', 'package.nls.json', 'package.nls.ru.json',
-    'native-bridge.cjs', 'update-core.js', 'update-ui.js', 'compatibility.json',
+    'native-bridge.cjs', 'usage.js', 'update-core.js', 'update-ui.js', 'compatibility.json',
     'scripts/native_adapter.py', 'scripts/renderer_adapter.py', 'scripts/update_package.py', 'scripts/read_history.py', 'test/update-probe.js']) {
     const file = path.join(helper, name); await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, 'fixture');

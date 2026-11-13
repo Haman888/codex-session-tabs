@@ -200,6 +200,7 @@ test('activation connects the language picker to sidebar titles, history and act
       if (name === './sessions') return { codexHome: () => '/artificial-home', listSessions: async () => rows, getSessionStatus: () => ({}), resetSessions() {} };
       if (name === './badges') return { prepareBadges: async () => ({}) };
       if (name === './update-ui') return { activateUpdates: () => ({ check: async () => ({ status: 'ready' }) }) };
+      if (name === './usage') return require('./usage-host').loadUsage(f.vscode);
       return nativeRequire(name);
     },
   });

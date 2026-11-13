@@ -12,6 +12,26 @@ function bridgeError(key, fallback) {
   return Object.assign(new Error(fallback), { sessionTabsKey: key });
 }
 
+const natural = value => Number.isSafeInteger(value) && value >= 0;
+function sanitizeRateLimits(value) {
+  const buckets = new Map();
+  const add = (id, input) => {
+    if (typeof id !== 'string' || !/^[a-zA-Z0-9_.:-]{1,100}$/.test(id)) return;
+    const bucket = { id };
+    for (const key of ['primary', 'secondary']) {
+      const window = input?.[key];
+      if (!natural(window?.usedPercent) || window.usedPercent > 100) continue;
+      bucket[key] = { usedPercent: window.usedPercent };
+      if (natural(window.windowDurationMins) && window.windowDurationMins > 0) bucket[key].windowDurationMins = window.windowDurationMins;
+      if (natural(window.resetsAt) && window.resetsAt <= 8640000000000) bucket[key].resetsAt = window.resetsAt;
+    }
+    if (bucket.primary || bucket.secondary) buckets.set(id, bucket);
+  };
+  if (value?.rateLimits) add(value.rateLimits.limitId || 'codex', value.rateLimits);
+  for (const [id, input] of Object.entries(value?.rateLimitsByLimitId || {}).slice(0, 32)) add(id, input);
+  return { buckets: [...buckets.values()] };
+}
+
 function freshPanelUri(uri) {
   // A native New Chat action must never reuse the resource of an older draft.
   // Restoring an already open resource still uses its original URI unchanged.
@@ -40,10 +60,19 @@ function controller(owner) {
   const subscription = connection.registerProvider(provider, {
     onNotification(notification) {
       const method = notification.method;
+      const params = notification.params || {};
+      const send = (name, data) => vscode.commands.executeCommand(name, data).then(undefined, () => {});
+      if (method === 'account/rateLimits/updated') {
+        send('codexSessionTabs.nativeRateLimits', sanitizeRateLimits(params));
+        return;
+      }
+      if (method === 'account/updated') {
+        send('codexSessionTabs.nativeUsageReset');
+        return;
+      }
       const phase = ['turn/started', 'codex/event/task_started'].includes(method) ? 'started'
         : ['turn/completed', 'codex/event/task_complete'].includes(method) ? 'completed' : undefined;
       if (!phase) return;
-      const params = notification.params || {};
       const id = params.threadId || params.conversationId;
       if (!UUID.test(id || '')) return;
       vscode.commands.executeCommand('codexSessionTabs.nativeActivity', {
@@ -56,7 +85,7 @@ function controller(owner) {
       pending.delete(String(response.id));
       clearTimeout(waiting.timer);
       if (response.error) waiting.reject(response.error.message ? new Error(response.error.message)
-        : bridgeError('error.renameFailed', 'Codex did not save the name.'));
+        : bridgeError(waiting.errorKey, 'Codex request failed.'));
       else waiting.resolve(response.result);
     },
   });
@@ -67,19 +96,23 @@ function controller(owner) {
     }
     pending.clear();
   } });
-  value = {
-    rename(id, name) {
-      if (!UUID.test(id)) return Promise.reject(bridgeError('error.invalidId', 'Invalid conversation identifier.'));
-      return new Promise((resolve, reject) => {
+  const request = (method, params, errorKey, timeoutKey) => new Promise((resolve, reject) => {
         const requestId = randomUUID();
         const timer = setTimeout(() => {
           pending.delete(requestId);
-          reject(bridgeError('error.renameTimeout', 'Codex did not respond to the rename request.'));
+          reject(bridgeError(timeoutKey, 'Codex did not respond.'));
         }, 15000);
-        pending.set(requestId, { resolve, reject, timer });
-        try { connection.sendRequest(provider, requestId, 'thread/name/set', { threadId: id, name }); }
+        pending.set(requestId, { resolve, reject, timer, errorKey });
+        try { connection.sendRequest(provider, requestId, method, params); }
         catch (error) { pending.delete(requestId); clearTimeout(timer); reject(error); }
       });
+  value = {
+    rename(id, name) {
+      if (!UUID.test(id)) return Promise.reject(bridgeError('error.invalidId', 'Invalid conversation identifier.'));
+      return request('thread/name/set', { threadId: id, name }, 'error.renameFailed', 'error.renameTimeout');
+    },
+    async readRateLimits() {
+      return sanitizeRateLimits(await request('account/rateLimits/read', {}, 'usage.unavailable', 'usage.unavailable'));
     },
   };
   controllers.set(owner, value);
@@ -109,6 +142,7 @@ async function attach(owner, panel, uri, initialId) {
       isVisible() { return !entry.disposed && panel.visible !== false && vscode.window.state?.focused !== false; },
       setUnread(unread, icons) { if (!entry.disposed) panel.iconPath = unread ? icons : originalIcon; },
       rename(id, name) { return controller(owner).rename(id, name); },
+      readRateLimits() { return controller(owner).readRateLimits(); },
     });
     if (restored?.id && UUID.test(restored.id)) {
       entry.id = restored.id;
@@ -175,4 +209,4 @@ function observe(_owner, webview, message) {
   vscode.commands.executeCommand('codexSessionTabs.nativeBind', { key: entry.key, id }).then(undefined, () => {});
 }
 
-module.exports = { attach, observe, freshPanelUri, openFreshPanel, startupPhase, initializePanel, watchPanelStartup };
+module.exports = { attach, observe, freshPanelUri, openFreshPanel, startupPhase, initializePanel, watchPanelStartup, sanitizeRateLimits };

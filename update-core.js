@@ -25,7 +25,7 @@ async function helperHash(helper) {
   const hash = createHash('sha256');
   for (const name of ['package.json', 'extension.js', 'sessions.js', 'titles.js', 'badges.js',
     'i18n.js', 'ui-language.js', 'translations/en.json', 'translations/ru.json', 'package.nls.json', 'package.nls.ru.json',
-    'native-bridge.cjs', 'update-core.js', 'update-ui.js', 'compatibility.json',
+    'native-bridge.cjs', 'usage.js', 'update-core.js', 'update-ui.js', 'compatibility.json',
     'scripts/native_adapter.py', 'scripts/renderer_adapter.py', 'scripts/update_package.py', 'scripts/read_history.py', 'test/update-probe.js']) {
     hash.update(name); hash.update(await fs.readFile(path.join(helper, name)));
   }
@@ -49,7 +49,7 @@ function newChatWaitMs(profile) {
   return Math.max(45000, (profile?.startupTimeoutMs ?? 0) + 15000);
 }
 
-const probeChecks = ['isolation', 'nativeTabs', 'titles', 'completion', 'acknowledgement', 'nativeNewChat', 'interface', 'language'];
+const probeChecks = ['isolation', 'nativeTabs', 'titles', 'completion', 'acknowledgement', 'nativeNewChat', 'interface', 'language', 'usage'];
 
 function validDiscoveredProfile(profile, platform = hostPlatform()) {
   const keys = ['version', 'platform', 'discovery', 'nativeLayout', 'startupTimeoutMs', 'sourceSha256', 'patchedSourceSha256', 'vsixSha256', 'url'];

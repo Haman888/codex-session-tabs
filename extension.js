@@ -11,6 +11,7 @@ const { codexHome, listSessions, getSessionStatus, resetSessions, invalidateSess
 const { Titles, createReadTracker } = require('./titles');
 const { prepareBadges } = require('./badges');
 const { activateUpdates } = require('./update-ui');
+const { activateUsage } = require('./usage');
 const { profileFor, newChatWaitMs } = require('./update-core');
 const profiles = require('./compatibility.json');
 
@@ -20,6 +21,7 @@ const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 let titles;
 let readTracker;
 let updates;
+let usage;
 let panelOpening = Promise.resolve();
 
 async function ensureCodex() {
@@ -200,13 +202,14 @@ function activate(context) {
   };
   provider.updateDescription();
   history.updateDescription();
-  const render = () => { provider.refresh(); history.refresh(); provider.updateDescription(); readTracker?.update(); };
+  const render = () => { provider.refresh(); history.refresh(); provider.updateDescription(); readTracker?.update(); usage?.render(); };
   const titleOptions = {
     openTabs,
     isActive: id => readableActiveTab()?.id === id,
   };
   titleOptions.iconsReady = prepareBadges(context).then(icons => { titleOptions.icons = icons; }, error => output.appendLine(t('log.iconsFailed', { message: errorText(error) })));
   titles = new Titles(context, () => listSessions(), render, output, titleOptions);
+  usage = activateUsage(context, () => titles.bindings.values());
   updates = activateUpdates(context, output, () => [...titles.turns.values()].some(turn => turn.phase === 'started'));
   readTracker = createReadTracker(() => {
     const active = readableActiveTab();
@@ -216,6 +219,7 @@ function activate(context) {
   const refresh = () => {
     readTracker.update();
     render();
+    void usage.refresh();
     titles.sync().catch(error => output.appendLine(error.message));
   };
   const safe = fn => async (...args) => {
@@ -287,6 +291,8 @@ function activate(context) {
     vscode.commands.registerCommand('codexSessionTabs.nativeBind', ({ key, id }) => titles.bind(key, id)),
     vscode.commands.registerCommand('codexSessionTabs.nativeClosed', key => titles.detach(key)),
     vscode.commands.registerCommand('codexSessionTabs.nativeActivity', event => titles.activity(event)),
+    vscode.commands.registerCommand('codexSessionTabs.nativeRateLimits', event => usage.rates(event, true)),
+    vscode.commands.registerCommand('codexSessionTabs.nativeUsageReset', () => usage.reset()),
     vscode.commands.registerCommand('codexSessionTabs.scope', safe(async () => {
       const selected = await vscode.window.showQuickPick([
         { label: t('scope.all'), scope: 'all', description: t('scope.allDescription') },
@@ -343,6 +349,7 @@ function activate(context) {
   } catch (error) { output.appendLine(t('log.watcherFailed', { message: errorText(error) })); }
   // A background window waits: the file watcher and a focus change refresh it.
   const timer = setInterval(() => {
+    void usage.refresh();
     if (vscode.window.state.focused && (openTabs().length || tree.visible || historyTree.visible)) refresh();
   }, 2500);
   context.subscriptions.push({ dispose: () => clearInterval(timer) });
@@ -362,7 +369,7 @@ function activate(context) {
     await updates.check();
   });
   language.ready.catch(error => output.appendLine(errorText(error)));
-  return { listSessions: () => provider.list(), openSession, newSession, show, view: tree, provider, history, historyView: historyTree, titles, updates, language };
+  return { listSessions: () => provider.list(), openSession, newSession, show, view: tree, provider, history, historyView: historyTree, titles, updates, usage, language };
 }
 
 function deactivate() {

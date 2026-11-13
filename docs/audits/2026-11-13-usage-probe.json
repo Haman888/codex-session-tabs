@@ -1,0 +1,21 @@
+{
+  "attempt": "usage-2026-11-13",
+  "helper": "af4ef7dedbaaa6ca2a4505c2c3ef1e50cae9239261d8411a137cdb8e7e0acad6",
+  "success": true,
+  "finished": true,
+  "phase": "usage",
+  "checks": {
+    "isolation": true,
+    "nativeNewChat": true,
+    "interface": true,
+    "language": true,
+    "nativeTabs": true,
+    "titles": true,
+    "completion": true,
+    "acknowledgement": true,
+    "usage": true
+  },
+  "version": "26.1111.21308",
+  "acknowledgementMode": "focused-tab-selection",
+  "elapsedMs": 73320
+}

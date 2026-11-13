@@ -5,5 +5,6 @@
   "setting.language": "Language of this companion extension. The Codex chat interface keeps its own language.",
   "setting.auto": "Use the VS Code display language; unsupported languages use English.",
   "setting.english": "English",
-  "setting.russian": "Русский"
+  "setting.russian": "Русский",
+  "setting.showUsage": "Show the remaining weekly Codex account limit in the status bar."
 }

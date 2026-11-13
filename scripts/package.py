@@ -100,6 +100,7 @@ files = [
     "titles.js",
     "badges.js",
     "native-bridge.cjs",
+    "usage.js",
     "update-core.js",
     "update-ui.js",
     "compatibility.json",

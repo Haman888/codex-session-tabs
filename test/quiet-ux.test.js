@@ -94,7 +94,7 @@ function extensionHost({ codex = true, health = 'ready' } = {}) {
   class TabInputCustom { constructor(uri) { this.uri = uri; this.viewType = 'chatgpt.conversationEditor'; } }
   const group = { tabs: [], activeTab: undefined, viewColumn: 1 };
   const vscode = {
-    EventEmitter, TabInputCustom,
+    EventEmitter, TabInputCustom, StatusBarAlignment: { Right: 2 },
     TreeItem: class { constructor(label) { this.label = label; } },
     ThemeIcon: class { constructor(id) { this.id = id; } },
     ThemeColor: class { constructor(id) { this.id = id; } },
@@ -108,9 +108,11 @@ function extensionHost({ codex = true, health = 'ready' } = {}) {
     workspace: {
       workspaceFolders: [], getConfiguration: () => ({ get: (_key, fallback) => fallback }),
       onDidChangeWorkspaceFolders: disposable,
+      onDidChangeConfiguration: disposable,
     },
     window: {
       state: { focused: true }, onDidChangeWindowState: disposable,
+      createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {} }),
       tabGroups: { all: [group], activeTabGroup: group, onDidChangeTabs: disposable, onDidChangeTabGroups: disposable },
       createOutputChannel: () => ({ appendLine: line => lines.push(line), dispose() {} }),
       registerUriHandler: disposable,
@@ -139,6 +141,7 @@ function extensionHost({ codex = true, health = 'ready' } = {}) {
     if (name === './badges') return { prepareBadges: async () => ({}) };
     if (name === './update-ui') return { activateUpdates: () => ({ check: async () => ({ status: health, message: `Adapter: ${health}` }) }) };
     if (name === './ui-language') return { activateLanguage: () => ({ ready: Promise.resolve() }) };
+    if (name === './usage') return require('./usage-host').loadUsage(vscode);
     return name.startsWith('./') ? require(path.join(root, name)) : require(name);
   };
   vm.runInNewContext(fs.readFileSync(path.join(root, 'extension.js'), 'utf8'), {

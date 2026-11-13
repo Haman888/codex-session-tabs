@@ -110,6 +110,18 @@ async function run() {
     }
     assert.ok(binding.getIcon().light.path.endsWith('blossom-black.svg'));
     report.checks.acknowledgement = true;
+    report.phase = 'usage'; save();
+    assert.equal(typeof binding.readRateLimits, 'function');
+    await api.usage.refresh(true);
+    await vscode.commands.executeCommand('codexSessionTabs.nativeUsageReset');
+    await vscode.commands.executeCommand('codexSessionTabs.nativeRateLimits', { buckets: [{ id: 'codex',
+      primary: { usedPercent: 25, windowDurationMins: 300 }, secondary: { usedPercent: 40, windowDurationMins: 10080 } }] });
+    assert.match(api.usage.bar.text, /60%/);
+    assert.match(api.usage.bar.tooltip, /40%/);
+    assert.equal(api.usage.bar.command, 'codexSessionTabs.usage');
+    await vscode.commands.executeCommand('codexSessionTabs.open', row);
+    assert.match(api.usage.bar.text, /60%/);
+    report.checks.usage = true;
     report.success = true;
   } catch (error) { report.error = error.stack || String(error); throw error; }
   finally { report.finished = true; report.elapsedMs = Date.now() - started; save(); }

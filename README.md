@@ -8,7 +8,16 @@ Independent Codex editor tabs, an open-sessions sidebar, short titles and orange
 
 **Supported setup:** local VS Code on macOS, Python **3.9+** and the system `/usr/bin/sqlite3`. Compatibility profiles: Intel (`darwin-x64`) with official Codex **26.1111.21308** and recovery profile **26.1007.21434**, tested on an Intel Mac in this fork; Apple silicon (`darwin-arm64`) with official Codex **26.1021.22027**, unchanged from upstream, where it was tested. This fork has not been run on Apple silicon hardware. Tested with VS Code **1.146.0**. The manifest accepts VS Code 1.106+, but older releases, Windows, Linux and remote extension hosts have not been verified.
 
-**Preview 0.7.0 (fork).** Installers: `codex-session-tabs-0.7.0-darwin-arm64.vsix` for Apple silicon and `codex-session-tabs-0.7.0-darwin-x64.vsix` for Intel. Build them from this source revision; published packages, when available, are listed in [Releases](https://github.com/Haman888/codex-session-tabs/releases). The package ID is `kasiaalena.codex-session-tabs`. An earlier local installation with a different ID needs a separate state transfer before replacement. This build does not transfer that state automatically. Keep the earlier installation until a transfer has been prepared and checked.
+**Preview 0.8.0 (fork).** Installers: `codex-session-tabs-0.8.0-darwin-arm64.vsix` for Apple silicon and `codex-session-tabs-0.8.0-darwin-x64.vsix` for Intel. Build them from this source revision; published packages, when available, are listed in [Releases](https://github.com/Haman888/codex-session-tabs/releases). The package ID is `kasiaalena.codex-session-tabs`. An earlier local installation with a different ID needs a separate state transfer before replacement. This build does not transfer that state automatically. Keep the earlier installation until a transfer has been prepared and checked.
+
+## Weekly account allowance
+
+The status bar shows the remaining weekly account allowance, for example **Codex · week: 94% left**. Click it or run **Codex: Codex account limits** for used and remaining percentages, reset times and other available account windows.
+
+Data comes from `account/rateLimits/read` and `account/rateLimits/updated` through an existing ready, signed-in Codex tab. Polls run at most once every five minutes while the window is focused; manual refresh is limited to once every 15 seconds. No model turn is sent. Weekly windows are identified by their 10080-minute duration, regardless of their primary/secondary position.
+
+Missing, failed, expired or outdated data shows `—`, with the old snapshot clearly marked in the details. A reset time never implies restored allowance without a new backend response. Account changes clear the in-memory data. The companion does not read credentials or transcripts. Disable the indicator with `codexSessionTabs.showUsage`.
+
 
 ## Features
 
@@ -81,7 +90,7 @@ npm test
 npm run package
 ```
 
-Packaging uses the Python standard library and downloads no build dependencies. Output: `dist/codex-session-tabs-0.7.0-darwin-arm64.vsix` on Apple silicon or `dist/codex-session-tabs-0.7.0-darwin-x64.vsix` on Intel. To build for the other processor, run `python3 scripts/package.py darwin-arm64` or `python3 scripts/package.py darwin-x64`.
+Packaging uses the Python standard library and downloads no build dependencies. Output: `dist/codex-session-tabs-0.8.0-darwin-arm64.vsix` on Apple silicon or `dist/codex-session-tabs-0.8.0-darwin-x64.vsix` on Intel. To build for the other processor, run `python3 scripts/package.py darwin-arm64` or `python3 scripts/package.py darwin-x64`.
 
 `npm test` uses small artificial fixtures in system temporary storage. It does not use real Codex history or launch GUI windows. The runtime protection check uses a separate empty profile.
 

@@ -110,5 +110,22 @@
   "update.confirmLatestCheck": "The check downloads the latest stable official Codex package (about 400 MB) and opens a separate VS Code test window for a few minutes. Installation is offered only after compatibility checks pass. Start?",
   "update.newRelease": "Codex {version} is available. Check compatibility with tabs and update?",
   "update.invalidProfile": "The discovered compatibility profile is invalid. Installation cancelled.",
-  "update.profileLimit": "The local compatibility history is full. No installed files were changed."
+  "update.profileLimit": "The local compatibility history is full. No installed files were changed.",
+  "usage.title": "Codex account limits",
+  "usage.limits": "Account limits",
+  "usage.unavailable": "Usage data is not available. Open a Codex tab and sign in to Codex if needed.",
+  "usage.outdated": "Data is outdated; refresh to see the current limit.",
+  "usage.used": "Used and remaining weekly allowance come from your Codex account.",
+  "usage.resetAt": "Reset: {date}",
+  "usage.updated": "Limits last requested",
+  "usage.refresh": "Refresh limits",
+  "usage.week": "week",
+  "usage.hours": "{value}h",
+  "usage.minutes": "{value}m",
+  "usage.primary": "primary",
+  "usage.secondary": "secondary",
+  "command.usage": "Codex account limits",
+  "usage.weekRemaining": "week: {value}% left",
+  "usage.unknownWeek": "week: —",
+  "usage.breakdown": "Used {used}% · Remaining {remaining}%"
 }

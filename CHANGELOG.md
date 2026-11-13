@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0 — fork (Haman888/codex-session-tabs)
+
+- Show remaining weekly Codex account allowance in the status bar, with used/remaining percentages and reset times in localized details.
+- Read only the native account usage API; identify the weekly window by duration, preserve sparse updates, throttle refreshes, and clear data on account changes.
+- Display unknown/outdated data explicitly, discard old-account in-flight responses, and never infer a restored allowance from a reset timestamp.
+- Include the usage interface in the required isolated update probe. Add native routing, privacy-boundary, stale-data and weekly-window regression checks.
+
 ## 0.7.0 — fork (Haman888/codex-session-tabs)
 
 - Check the actual latest stable Codex release instead of always installing the last bundled profile.

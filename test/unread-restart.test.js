@@ -95,6 +95,7 @@ async function fixture(saved = new Map([['unreadSessions', IDS.slice()]]), { bef
     if (name === './badges') return { prepareBadges: async () => icons };
     if (name === './update-ui') return { activateUpdates: () => ({ check: async () => {} }) };
     if (name === './ui-language') return { activateLanguage: () => ({ ready: Promise.resolve() }) };
+    if (name === './usage') return require('./usage-host').loadUsage(vscode);
     return name.startsWith('./') ? require(path.join(__dirname, '..', name)) : require(name);
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../extension.js'), 'utf8'), { module, require: localRequire, ...timers });
