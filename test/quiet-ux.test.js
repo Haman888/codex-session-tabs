@@ -151,7 +151,7 @@ test('the protection check asks first and does nothing when the dialog is closed
   assert.equal((await declined.commands.get('codexSessionTabs.checkUpdate')()).status, 'cancelled');
   assert.equal(declined.seen.warnings.length, 1);
   const [{ message, rest }] = declined.seen.warnings;
-  assert.match(message, /26\.1007\.21434/);
+  assert.match(message, /26\.1111\.21308/);
   assert.match(message, /400 MB/);
   assert.equal(rest[0].modal, true);
   assert.equal(declined.seen.progress, 0);

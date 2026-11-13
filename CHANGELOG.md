@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.5 — fork (Haman888/codex-session-tabs)
+
+- Add an exact-checksum Intel Mac profile for official Codex **26.1111.21308**, the latest stable Marketplace version checked on 2026-11-13. Retain the older Intel recovery and upstream Apple silicon profiles.
+- Adapt to the shared HTML loader and `request-app-server-state` message while preserving the native renderer, CSP and application-server behavior. No renderer asset patch is needed for this profile.
+- Keep the 90-second startup watchdog, deferred initialization of hidden tabs and sequential New Chat creation.
+- Test the new layout through its actual adapter entrypoint, preserve restore behavior and reject unknown layouts. Saved-chat integration checks now wait for renderer readiness after opening and reopening a conversation.
+
 ## 0.6.4 — fork (Haman888/codex-session-tabs)
 
 - Check adapter health before opening or revealing a conversation. Unsupported, missing or changed adapters report the reason immediately; an installation awaiting reload cannot create another broken editor.

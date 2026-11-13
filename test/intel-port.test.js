@@ -4,6 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const vm = require('node:vm');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { makeTemp } = require('./temp');
 const { hostPlatform, profileFor, supportedProfile } = require('../update-core');
@@ -19,11 +20,11 @@ async initializeWebview(e){e.html=await this.getWebviewContent(e),s.start()}
 watch(){this.timeout=setTimeout(()=>{this.timeout=void 0,this.onTimeout({elapsedMs:0,receivedWebviewMessage:!1,timeoutMs:3e4})},3e4)}
 }; module.exports = Native;`;
 
-async function fixture(t, profile, content = source) {
+async function fixture(t, profile, content = source, version = '26.1007.21434') {
   const folder = await makeTemp('intel-port-unit-');
   t.after(() => fs.rm(folder, { recursive: true, force: true }));
   await fs.mkdir(path.join(folder, 'out'));
-  await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({ publisher: 'OpenAI', name: 'chatgpt', version: '26.1007.21434' }));
+  await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({ publisher: 'OpenAI', name: 'chatgpt', version }));
   await fs.writeFile(path.join(folder, 'out/extension.js'), content);
   const helper = path.join(folder, 'helper');
   for (const name of ['scripts/native_adapter.py', 'scripts/renderer_adapter.py', 'native-bridge.cjs']) {
@@ -31,7 +32,7 @@ async function fixture(t, profile, content = source) {
     await fs.copyFile(path.join(root, name), target);
   }
   await fs.writeFile(path.join(helper, 'compatibility.json'), JSON.stringify([
-    { version: '26.1007.21434', platform: 'darwin-x64', startupTimeoutMs: 90000, ...profile },
+    { version, platform: 'darwin-x64', startupTimeoutMs: 90000, ...profile },
   ]));
   return folder;
 }
@@ -43,6 +44,44 @@ const run = (folder, ...args) => {
   assert.equal(result.status, 0, result.stderr);
   return result.stdout;
 };
+
+test('the November editor layout preserves its shared HTML loader and app-server-state message', async t => {
+  const modern = source
+    .replaceAll('rF(', 'yL(')
+    .replace('case"ready":break;', 'case"ready":case"request-app-server-state":break;')
+    .replace('this.getWebviewContent(e)', 'R2(this.extensionUri,e,this.webviewMetaTags(e))');
+  const folder = await fixture(t, { nativeLayout: 'shared-content-v1' }, modern, '26.1111.21308');
+  run(folder);
+  const installed = await fs.readFile(path.join(folder, 'out/extension.js'), 'utf8');
+  execFileSync(process.execPath, ['--check', path.join(folder, 'out/extension.js')]);
+  const module = { exports: {} }, calls = [], watchdog = {}, webview = {};
+  vm.runInNewContext(installed, {
+    module, s: watchdog,
+    R2: async (uri, view, tags) => { calls.push({ uri, view, tags }); return '<html>native</html>'; },
+    require: () => ({
+      watchPanelStartup: (view, timer) => { calls.push({ view, timer }); },
+      observe: (_owner, view, message) => { calls.push({ view, message }); },
+    }),
+  });
+  const native = new module.exports();
+  native.extensionUri = 'native-extension';
+  native.webviewMetaTags = () => 'native-tags';
+  await native.initializeWebview(webview);
+  assert.equal(webview.html, '<html>native</html>');
+  assert.deepEqual(calls[0], { uri: 'native-extension', view: webview, tags: 'native-tags' });
+  assert.deepEqual(calls[1], { view: webview, timer: watchdog });
+  const message = { type: 'request-app-server-state' };
+  await native.handleMessage(webview, message);
+  assert.deepEqual(calls[2], { view: webview, message });
+  assert.equal(JSON.parse(run(folder, '--check')).upToDate, true);
+  run(folder, '--restore');
+  assert.equal(await fs.readFile(path.join(folder, 'out/extension.js'), 'utf8'), modern);
+  const wrong = await fixture(t, {}, modern);
+  assert.notEqual(adapter(wrong).status, 0, 'The new structure needs its own reviewed layout');
+  assert.equal(await fs.readFile(path.join(wrong, 'out/extension.js'), 'utf8'), modern);
+  const unknown = await fixture(t, { nativeLayout: 'unknown' });
+  assert.notEqual(adapter(unknown).status, 0, 'Unknown layouts fail closed');
+});
 
 test('the Intel 26.1007 profile hooks other minified names, raises the watchdog and needs no renderer change', async t => {
   const folder = await fixture(t);

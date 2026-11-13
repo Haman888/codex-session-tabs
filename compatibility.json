@@ -20,5 +20,15 @@
     "sourceSha256": "a8069de80c8f8141481d033f94c3a95e1b59f399143cb2554d3f68469dfbe5b8",
     "patchedSourceSha256": "fcd3155227a72f58f24a7c7922ba34231ea73f966d2def89468c5289a9e5956a",
     "startupTimeoutMs": 90000
+  },
+  {
+    "version": "26.1111.21308",
+    "platform": "darwin-x64",
+    "nativeLayout": "shared-content-v1",
+    "startupTimeoutMs": 90000,
+    "url": "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/OpenAI/vsextensions/chatgpt/26.1111.21308/vspackage?targetPlatform=darwin-x64",
+    "sourceSha256": "aa93a1b5aaa79746f3b583133355c659a0f059ff98d1956adf9da0e4afbcf817",
+    "patchedSourceSha256": "28473bf31d4b21f65d326c4443d22b1a5759b0192bb5644aaabc6192400e543f",
+    "vsixSha256": "0afc792b44364ff1f68a4804e44cd2626df7554d553e40e18752b94818d683f9"
   }
 ]

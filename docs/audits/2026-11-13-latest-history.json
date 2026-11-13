@@ -1,0 +1,80 @@
+{
+  "started": "2026-11-13T07:22:35.432Z",
+  "checks": [
+    {
+      "name": "extension activated",
+      "detail": "0.6.4"
+    },
+    {
+      "name": "saved chats loaded",
+      "detail": {
+        "count": 3
+      }
+    },
+    {
+      "name": "empty open section and saved chats in history",
+      "detail": {
+        "open": 0,
+        "history": 3
+      }
+    },
+    {
+      "name": "three distinct native saved-chat tabs",
+      "detail": {
+        "count": 3,
+        "labels": [
+          "Compatibility test 2",
+          "Compatibility test 3",
+          "Compatibility test 1"
+        ]
+      }
+    },
+    {
+      "name": "native adapter synchronizes actual tab titles",
+      "detail": true
+    },
+    {
+      "name": "open section mirrors tabs and history excludes them",
+      "detail": {
+        "open": 3,
+        "history": 0
+      }
+    },
+    {
+      "name": "closing a tab removes it from open section and returns it to history",
+      "detail": true
+    },
+    {
+      "name": "opening from history restores the tab and open-list entry",
+      "detail": true
+    },
+    {
+      "name": "reopening saved chat reuses its own tab",
+      "detail": true
+    },
+    {
+      "name": "two new chats have independent native tabs",
+      "detail": {
+        "totalTabs": 5
+      }
+    },
+    {
+      "name": "empty drafts have distinct numbered titles",
+      "detail": true
+    },
+    {
+      "name": "manual rename changes the actual native tab",
+      "detail": true
+    },
+    {
+      "name": "background-completion badge and reading acknowledgement",
+      "detail": true
+    },
+    {
+      "name": "invalid chat identifiers rejected",
+      "detail": true
+    }
+  ],
+  "success": true,
+  "finished": "2026-11-13T07:23:42.027Z"
+}

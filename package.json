@@ -2,7 +2,7 @@
   "name": "codex-session-tabs",
   "displayName": "Codex Session Tabs (fork)",
   "description": "%package.description%",
-	"version": "0.6.4",
+  "version": "0.6.5",
   "publisher": "kasiaalena",
   "license": "MIT",
   "repository": {

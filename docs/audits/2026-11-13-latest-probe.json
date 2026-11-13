@@ -1,0 +1,19 @@
+{
+  "attempt": "repair-2026-11-13",
+  "success": true,
+  "finished": true,
+  "phase": "titles-and-indicators",
+  "checks": {
+    "isolation": true,
+    "nativeNewChat": true,
+    "interface": true,
+    "language": true,
+    "nativeTabs": true,
+    "titles": true,
+    "completion": true,
+    "acknowledgement": true
+  },
+  "version": "26.1111.21308",
+  "acknowledgementMode": "focused-tab-selection",
+  "elapsedMs": 45727
+}

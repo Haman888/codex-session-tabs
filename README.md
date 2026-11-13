@@ -2,13 +2,13 @@
 
 English · [Русский](README.ru.md)
 
-**Fork of [kasiaalena/codex-session-tabs](https://github.com/kasiaalena/codex-session-tabs).** It adds Intel Mac support (official Codex 26.1007.21434), starts quietly without a setup reminder and fixes several issues; see the [CHANGELOG](CHANGELOG.md). It keeps the extension ID `kasiaalena.codex-session-tabs`, so it replaces the original installation and keeps its state.
+**Fork of [kasiaalena/codex-session-tabs](https://github.com/kasiaalena/codex-session-tabs).** It adds Intel Mac support (official Codex 26.1111.21308), starts quietly without a setup reminder and fixes several issues; see the [CHANGELOG](CHANGELOG.md). It keeps the extension ID `kasiaalena.codex-session-tabs`, so it replaces the original installation and keeps its state.
 
 Independent Codex editor tabs, an open-sessions sidebar, short titles and orange completion indicators for VS Code. An unofficial companion to the OpenAI Codex extension; this project is not affiliated with or supported by OpenAI.
 
-**Supported setup:** local VS Code on macOS, Python **3.9+** and the system `/usr/bin/sqlite3`. Compatibility profiles: Intel (`darwin-x64`) with official Codex **26.1007.21434**, tested on an Intel Mac in this fork; Apple silicon (`darwin-arm64`) with official Codex **26.1021.22027**, unchanged from upstream, where it was tested. This fork has not been run on Apple silicon hardware. Tested with VS Code **1.145.0**. The manifest accepts VS Code 1.106+, but older releases, Windows, Linux and remote extension hosts have not been verified.
+**Supported setup:** local VS Code on macOS, Python **3.9+** and the system `/usr/bin/sqlite3`. Compatibility profiles: Intel (`darwin-x64`) with official Codex **26.1111.21308** and recovery profile **26.1007.21434**, tested on an Intel Mac in this fork; Apple silicon (`darwin-arm64`) with official Codex **26.1021.22027**, unchanged from upstream, where it was tested. This fork has not been run on Apple silicon hardware. Tested with VS Code **1.146.0**. The manifest accepts VS Code 1.106+, but older releases, Windows, Linux and remote extension hosts have not been verified.
 
-**Preview 0.4.5 (fork).** Installers: `codex-session-tabs-0.4.5-darwin-arm64.vsix` for Apple silicon and `codex-session-tabs-0.4.5-darwin-x64.vsix` for Intel. Download them from this fork's [Releases](https://github.com/Haman888/codex-session-tabs/releases), or build them from source. The package ID is `kasiaalena.codex-session-tabs`. An earlier local installation with a different ID needs a separate state transfer before replacement. This build does not transfer that state automatically. Keep the earlier installation until a transfer has been prepared and checked.
+**Preview 0.6.5 (fork).** Installers: `codex-session-tabs-0.6.5-darwin-arm64.vsix` for Apple silicon and `codex-session-tabs-0.6.5-darwin-x64.vsix` for Intel. Build them from this source revision; published packages, when available, are listed in [Releases](https://github.com/Haman888/codex-session-tabs/releases). The package ID is `kasiaalena.codex-session-tabs`. An earlier local installation with a different ID needs a separate state transfer before replacement. This build does not transfer that state automatically. Keep the earlier installation until a transfer has been prepared and checked.
 
 ## Features
 
@@ -81,7 +81,7 @@ npm test
 npm run package
 ```
 
-Packaging uses the Python standard library and downloads no build dependencies. Output: `dist/codex-session-tabs-0.4.5-darwin-arm64.vsix` on Apple silicon or `dist/codex-session-tabs-0.4.5-darwin-x64.vsix` on Intel. To build for the other processor, run `python3 scripts/package.py darwin-arm64` or `python3 scripts/package.py darwin-x64`.
+Packaging uses the Python standard library and downloads no build dependencies. Output: `dist/codex-session-tabs-0.6.5-darwin-arm64.vsix` on Apple silicon or `dist/codex-session-tabs-0.6.5-darwin-x64.vsix` on Intel. To build for the other processor, run `python3 scripts/package.py darwin-arm64` or `python3 scripts/package.py darwin-x64`.
 
 `npm test` uses small artificial fixtures in system temporary storage. It does not use real Codex history or launch GUI windows. The runtime protection check uses a separate empty profile.
 

@@ -1,0 +1,20 @@
+{
+  "attempt": "latest-installed-2026-11-13",
+  "helper": "3782498c8ec87ae4ea12a4b24d315193685e14d275d97ceeaf8df391d6be7368",
+  "success": true,
+  "finished": true,
+  "phase": "titles-and-indicators",
+  "checks": {
+    "isolation": true,
+    "nativeNewChat": true,
+    "interface": true,
+    "language": true,
+    "nativeTabs": true,
+    "titles": true,
+    "completion": true,
+    "acknowledgement": true
+  },
+  "version": "26.1111.21308",
+  "acknowledgementMode": "focused-tab-selection",
+  "elapsedMs": 41857
+}

@@ -3,6 +3,7 @@
 const vscode = require('vscode');
 const assert = require('node:assert/strict');
 const { integrationEnvironment, integrationContext, createOutput } = require('./integration-support');
+const { profileFor, newChatWaitMs } = require('../update-core');
 
 async function waitFor(predicate, message, timeout = 15000) {
   const deadline = Date.now() + timeout;
@@ -42,7 +43,11 @@ async function run() {
     assert.equal((await api.history.getChildren()).length, sessions.length);
     check('empty open section and saved chats in history', { open: 0, history: sessions.length });
     const selected = sessions.slice(0, 3);
+    const rendererWait = newChatWaitMs(profileFor(require('../compatibility.json'), vscode.extensions.getExtension('openai.chatgpt').packageJSON.version));
+    const waitForSavedTab = id => waitFor(() => [...api.titles.bindings.values()]
+      .some(binding => binding.id === id && binding.isReady?.() === true), 'Saved chat renderer is ready', rendererWait);
     for (const session of selected) await api.openSession(session);
+    await waitForSavedTab(selected[2].id);
     const savedTabs = tabs();
     for (const session of selected) {
       const matches = savedTabs.filter(tab => tab.input.uri.path === `/local/${session.id}`);
@@ -67,10 +72,12 @@ async function run() {
     assert.ok(closed, 'Closing a tab puts its saved chat back in history');
     check('closing a tab removes it from open section and returns it to history', true);
     await vscode.commands.executeCommand('codexSessionTabs.open', closed);
+    await waitForSavedTab(closed.id);
     assert.equal((await api.provider.getChildren()).length, 3);
     assert.ok(!(await api.history.getChildren()).some(row => row.id === closed.id));
     check('opening from history restores the tab and open-list entry', true);
     await api.openSession(selected[0]);
+    await waitForSavedTab(selected[0].id);
     assert.equal(tabs().length, savedTabs.length, 'Reopening an existing session selects its tab');
     check('reopening saved chat reuses its own tab', true);
     const firstNew = await api.newSession();
@@ -104,6 +111,7 @@ async function run() {
       assert.ok(badgeAssets.length > 0 && badgeAssets.every(asset => asset.loaded), 'The renderer can load every ready badge image');
     }
     await api.openSession(selected[0]);
+    await waitForSavedTab(selected[0].id);
     await waitFor(() => !api.titles.isUnread(selected[0].id), 'Selecting a completed background tab clears its badge');
     assert.ok(backgroundBinding.getIcon().light.path.endsWith('blossom-black.svg'), 'Reading restores the original Codex icon');
     check('background-completion badge and reading acknowledgement', true);
